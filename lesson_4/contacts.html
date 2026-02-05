@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>CRM Dashboard</title>
+<!--    Критические стили, для избежания перекомпановки макета-->
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .card { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .actions button { margin-left: 5px; }
+        form { background: #f0f0f0; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        .hidden { display: none; }
+
+        #users-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .user-card {
+            padding: 1%;
+            margin-block: 1%;
+            width: 300px;
+            box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+        }
+
+        .user-buttons {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px
+        }
+    </style>
+</head>
+<body>
+<h1>Управление пользователями</h1>
+
+<!-- Форма для JSON API (/users) -->
+<form id="user-form">
+    <h3 id="form-title">Добавить нового пользователя</h3>
+    <input type="hidden" id="user-id"> <!-- Скрытое поле для ID при редактировании -->
+    <input type="text" id="name" placeholder="Имя" required>
+    <input type="email" id="email" placeholder="Email" required>
+    <input type="number" id="age" placeholder="Возраст" required>
+    <button type="submit" id="save-btn">Сохранить</button>
+    <button type="button" id="cancel-btn" class="hidden">Отмена</button>
+</form>
+
+<div id="users-list">
+
+</div>
+
+<hr>
+
+<!-- Форма для Legacy-эндпоинта (/process-form) -->
+<h3>Обратная связь (Legacy Form)</h3>
+<form id="feedback-form">
+    <input type="text" name="name" placeholder="Ваше имя">
+    <input type="email" name="email" placeholder="Email">
+    <button type="submit">Отправить (Form Data)</button>
+</form>
+
+<script src="app.js"></script>
+</body>
+</html>
