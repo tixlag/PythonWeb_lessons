@@ -1,0 +1,28 @@
+services:
+  nginx-gateway:
+    build: ./nginx
+    ports:
+      - "5000:5000"
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - app-network
+
+  backend:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - app-network
+
+  frontend:
+    build: ./frontend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
