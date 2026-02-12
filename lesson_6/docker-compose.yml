@@ -23,6 +23,11 @@ services:
     networks:
       - app-network
 
+  frontend2:
+    build: ./frontend
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
