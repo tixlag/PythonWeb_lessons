@@ -26,3 +26,5 @@ services:
 networks:
   app-network:
     driver: bridge
+
+#Комментарий дял git истории
