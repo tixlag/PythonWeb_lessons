@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security & Event Context</title>
+    <script defer src="для задания 3.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            background: #f5f5f5;
+            color: #333;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #2c3e50;
+            border-bottom: 3px solid #9ad6d5;
+            padding-bottom: 10px;
+        }
+        .comment-form {
+            background: #c4e3e0;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border: 1px solid #dbe9ea;
+        }
+        .form-group {
+            display: grid;
+            justify-content: space-around;
+            justify-items: start;
+            gap: 5px;
+        }
+        label {
+            font-size: 20px;
+        }
+        input, textarea {
+            border-radius: 8px;
+            padding: 5px;
+            font-size: 15px;
+            border: 1px solid #7b9797;
+            margin-bottom: 10px;
+        }
+        .submit-btn {
+            padding: 5px;
+            border-radius: 7px;
+            border: 1px solid #7b9797;
+            background: #9ad6d5;
+            font-size: 15px;
+            margin-top: 7px;
+        }
+        .comments-section {
+            display: grid;
+            justify-content: start;
+            justify-items: start;
+        }
+        #commentsList {
+            max-width: 500px;
+        }
+
+        .comment {
+            display: grid;
+            margin-bottom: 10px;
+            justify-items: start;
+            border: 1px solid #333;
+            padding: 10px;
+            border-radius: 8px;
+            width: 400px;
+            height: auto;
+        }
+        .author-name {
+            font-weight: bold;
+            word-break: break-word;
+            text-align: left; 
+        }
+        .comment-text {
+            margin-bottom: 15px;
+            word-break: break-word;   
+            color: #444;
+            text-align: left;
+        }
+        .comment-time {
+            font-style: italic;
+        }
+        .delete-btn {
+            border-radius: 8px;
+            border: 1px solid #7b9797;
+            background: #9ad6d5;
+            padding: 5px;
+            font-size: 15px;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Лента комментариев</h1>
+        
+        <form class="comment-form" id="commentForm">
+            <div class="form-group">
+                <label for="authorName">Ваше имя:</label>
+                <input type="text" id="authorName" placeholder="Введите ваше имя" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="commentText">Комментарий:</label>
+                <textarea id="commentText" placeholder="Напишите ваш комментарий" required></textarea>
+            </div>
+            
+            <button type="submit" class="submit-btn">Добавить комментарий</button>
+        </form>
+        
+        <div class="comments-section">
+            <h2>Комментарии</h2>
+            <div id="commentsList"></div>
+        </div>
+    </div>
+</body>
+</html>
