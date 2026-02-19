@@ -16,56 +16,26 @@
 
 ---
 
-## Теоретический материал
+## DDD Архитектура
 
-### Optional поля в Pydantic
+### Структура файлов для задач
 
-Поле может быть None (необязательное).
-
-**Пример:**
-```python
-from typing import Optional
-
-class Task(BaseModel):
-    title: str  # Обязательное
-    description: Optional[str] = None  # Необязательное, по умолчанию None
-    due_date: Optional[datetime] = None
 ```
-
-### Datetime в Python
-
-Работа с датами и временем.
-
-**Пример:**
-```python
-from datetime import datetime, timedelta
-
-# Текущее время
-now = datetime.utcnow()
-
-# Дедлайн — через 7 дней
-deadline = now + timedelta(days=7)
-
-# Формат для JSON
-deadline.isoformat()  # "2024-01-15T12:00:00"
-```
-
-### Aggregation запросы
-
-Подсчёт статистики в базе данных.
-
-**Пример:**
-```python
-from sqlalchemy import func, select
-
-# Подсчёт количества
-query = select(func.count()).select_from(Task)
-result = await db.execute(query)
-total = result.scalar()
-
-# Подсчёт с условием
-query = select(func.count()).select_from(Task).where(Task.status == "done")
-done_count = await db.execute(query)
+app/
+├── models/
+│   ├── task.py          # SQLAlchemy модель задачи
+│   └── interaction.py   # SQLAlchemy модель взаимодействия
+├── dtos/
+│   ├── task.py         # Pydantic DTO для задач
+│   └── interaction.py   # Pydantic DTO для взаимодействий
+├── services/
+│   ├── task_service.py       # Бизнес-логика задач
+│   ├── interaction_service.py # Бизнес-логика взаимодействий
+│   └── dashboard_service.py  # Бизнес-логика дашборда
+└── routes/
+    ├── tasks.py       # HTTP эндпоинты задач
+    ├── interactions.py # HTTP эндпоинты взаимодействий
+    └── dashboard.py   # HTTP эндпоинты дашборда
 ```
 
 ---
@@ -92,10 +62,12 @@ done_count = await db.execute(query)
 
 **Изучить:**
 - Модели Client и Deal (посмотреть у Сони и Эвелины)
+- DTO клиента и сделки
+- Сервисы клиента и сделки
 - Как работают роутеры
 - Как настроена аутентификация
 
-**Ожидаемый результат:** Понимание архитектуры проекта
+**Ожидаемый результат:** Понимание DDD архитектуры проекта
 
 ---
 
@@ -122,40 +94,27 @@ done_count = await db.execute(query)
 #### 2.1 SQLAlchemy модель Task
 **Файл:** `app/models/task.py`
 
-**Поля:**
-- id (Integer, PK)
-- title (String, not null)
-- description (Text, nullable)
-- client_id (Integer, FK → clients.id, nullable)
-- deal_id (Integer, FK → deals.id, nullable)
-- assigned_to (Integer, FK → users.id)
-- due_date (DateTime, nullable)
-- priority (String) — low, medium, high
-- status (String) — todo, in_progress, done
-- created_at (DateTime)
-- updated_at (DateTime)
-
 ```python
-# Шаблон:
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime
 
 class Task(Base):
+    """Сущность Задача в базе данных"""
     __tablename__ = "tasks"
     
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(255), nullable=False)
+    title = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
     
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True)
-    assigned_to = Column(Integer, ForeignKey("users.id"))
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=False)
     
     due_date = Column(DateTime, nullable=True)
-    priority = Column(String(20), default="medium")
-    status = Column(String(20), default="todo")
+    priority = Column(String(20), default="medium", index=True)  # low, medium, high
+    status = Column(String(20), default="todo", index=True)  # todo, in_progress, done
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -163,7 +122,7 @@ class Task(Base):
     # Связи
     client = relationship("Client", back_populates="tasks")
     deal = relationship("Deal", back_populates="tasks")
-    assignee = relationship("User", foreign_keys=[assigned_to])
+    assignee = relationship("User", foreign_keys=[assigned_to], back_populates="assigned_tasks")
 ```
 
 **Наводящий вопрос:** Зачем нужны поля client_id и deal_id nullable?
@@ -178,33 +137,29 @@ class Task(Base):
 
 ---
 
-#### 2.2 Pydantic схемы для Task
-**Файл:** `app/schemas/task.py`
-
-**Enums:**
-```python
-from enum import Enum
-
-class TaskPriority(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-class TaskStatus(str, Enum):
-    TODO = "todo"
-    IN_PROGRESS = "in_progress"
-    DONE = "done"
-```
-
-**Схемы:**
+#### 2.2 Pydantic DTO для Task
+**Файл:** `app/dtos/task.py`
 
 ```python
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
-from .enums import TaskPriority, TaskStatus
+from enum import Enum
 
-class TaskCreate(BaseModel):
+class TaskPriority(str, Enum):
+    """Приоритеты задач"""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+class TaskStatus(str, Enum):
+    """Статусы задач"""
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+
+class TaskCreateDTO(BaseModel):
+    """DTO для создания задачи"""
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     client_id: int | None = None
@@ -212,8 +167,10 @@ class TaskCreate(BaseModel):
     assigned_to: int
     due_date: datetime | None = None
     priority: TaskPriority = TaskPriority.MEDIUM
+    status: TaskStatus = TaskStatus.TODO
 
-class TaskUpdate(BaseModel):
+class TaskUpdateDTO(BaseModel):
+    """DTO для обновления задачи"""
     title: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     client_id: int | None = None
@@ -223,8 +180,17 @@ class TaskUpdate(BaseModel):
     priority: TaskPriority | None = None
     status: TaskStatus | None = None
 
-class TaskResponse(TaskCreate):
+class TaskResponseDTO(BaseModel):
+    """DTO для ответа"""
     id: int
+    title: str
+    description: str | None
+    client_id: int | None
+    deal_id: int | None
+    assigned_to: int
+    due_date: datetime | None
+    priority: TaskPriority
+    status: TaskStatus
     created_at: datetime
     updated_at: datetime
     
@@ -232,65 +198,206 @@ class TaskResponse(TaskCreate):
         from_attributes = True
 ```
 
-**Ожидаемый результат:** Схемы готовы
+**Ожидаемый результат:** DTO готовы
 
 ---
 
-#### 2.3 Роутер для Task
-**Файл:** `app/routers/tasks.py`
-
-**Эндпоинты:**
+#### 2.3 Сервис для Task
+**Файл:** `app/services/task_service.py`
 
 ```python
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from app.models.task import Task
+from app.dtos.task import TaskCreateDTO, TaskUpdateDTO, TaskPriority, TaskStatus
+from typing import List, Optional, Tuple
+from datetime import datetime
+
+class TaskService:
+    """Сервис для работы с задачами"""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def create(self, task_data: TaskCreateDTO) -> Task:
+        """Создать новую задачу"""
+        task = Task(**task_data.model_dump())
+        self.db.add(task)
+        await self.db.commit()
+        await self.db.refresh(task)
+        return task
+    
+    async def get_by_id(self, task_id: int) -> Optional[Task]:
+        """Получить задачу по ID"""
+        result = await self.db.execute(
+            select(Task).where(Task.id == task_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_all(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        status: TaskStatus | None = None,
+        assigned_to: int | None = None,
+        priority: TaskPriority | None = None
+    ) -> Tuple[List[Task], int]:
+        """Получить все задачи с фильтрацией"""
+        query = select(Task)
+        count_query = select(func.count(Task.id))
+        
+        if status:
+            query = query.where(Task.status == status)
+            count_query = count_query.where(Task.status == status)
+        
+        if assigned_to:
+            query = query.where(Task.assigned_to == assigned_to)
+            count_query = count_query.where(Task.assigned_to == assigned_to)
+        
+        if priority:
+            query = query.where(Task.priority == priority)
+            count_query = count_query.where(Task.priority == priority)
+        
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar()
+        
+        query = query.offset(skip).limit(limit).order_by(Task.due_date.asc().nullslast())
+        result = await self.db.execute(query)
+        tasks = list(result.scalars().all())
+        
+        return tasks, total
+    
+    async def update(
+        self,
+        task_id: int,
+        task_data: TaskUpdateDTO
+    ) -> Optional[Task]:
+        """Обновить задачу"""
+        task = await self.get_by_id(task_id)
+        if not task:
+            return None
+        
+        update_data = task_data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(task, field, value)
+        
+        await self.db.commit()
+        await self.db.refresh(task)
+        return task
+    
+    async def delete(self, task_id: int) -> bool:
+        """Удалить задачу"""
+        task = await self.get_by_id(task_id)
+        if not task:
+            return False
+        
+        await self.db.delete(task)
+        await self.db.commit()
+        return True
+    
+    async def get_overdue(self) -> List[Task]:
+        """Получить просроченные задачи"""
+        now = datetime.utcnow()
+        result = await self.db.execute(
+            select(Task)
+            .where(
+                Task.due_date < now,
+                Task.status != TaskStatus.DONE
+            )
+            .order_by(Task.due_date.asc())
+        )
+        return list(result.scalars().all())
+```
+
+**Ожидаемый результат:** Сервис создан
+
+---
+
+#### 2.4 Роутер для Task
+**Файл:** `app/routes/tasks.py`
+
+```python
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.dtos.task import TaskCreateDTO, TaskUpdateDTO, TaskResponseDTO, TaskStatus, TaskPriority
+from app.services.task_service import TaskService
+from app.models.user import User
+from app.deps.auth import get_current_user
+from typing import List
+
 router = APIRouter(prefix="/api/tasks", tags=["Tasks"])
 
-# GET / — получить все задачи
-@router.get("/", response_model=list[TaskResponse])
+@router.get("/", response_model=List[TaskResponseDTO])
 async def get_tasks(
-    status: TaskStatus | None = None,
-    assigned_to: int | None = None,
-    priority: TaskPriority | None = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    status: TaskStatus | None = Query(None),
+    assigned_to: int | None = Query(None),
+    priority: TaskPriority | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить список задач с фильтрацией"""
+    service = TaskService(db)
+    tasks, total = await service.get_all(
+        skip=skip,
+        limit=limit,
+        status=status,
+        assigned_to=assigned_to,
+        priority=priority
+    )
+    return tasks
 
-# POST / — создать задачу
-@router.post("/", response_model=TaskResponse, status_code=201)
+@router.post("/", response_model=TaskResponseDTO, status_code=status.HTTP_201_CREATED)
 async def create_task(
-    task_data: TaskCreate,
+    task_data: TaskCreateDTO,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Создать новую задачу"""
+    service = TaskService(db)
+    task = await service.create(task_data)
+    return task
 
-# GET /{task_id} — получить задачу
-@router.get("/{task_id}", response_model=TaskResponse)
+@router.get("/{task_id}", response_model=TaskResponseDTO)
 async def get_task(
     task_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить задачу по ID"""
+    service = TaskService(db)
+    task = await service.get_by_id(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
-# PUT /{task_id} — обновить задачу
-@router.put("/{task_id}", response_model=TaskResponse)
+@router.put("/{task_id}", response_model=TaskResponseDTO)
 async def update_task(
     task_id: int,
-    task_data: TaskUpdate,
+    task_data: TaskUpdateDTO,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Обновить задачу"""
+    service = TaskService(db)
+    task = await service.update(task_id, task_data)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
-# DELETE /{task_id} — удалить задачу
-@router.delete("/{task_id}", status_code=204)
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Удалить задачу"""
+    service = TaskService(db)
+    success = await service.delete(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found")
 ```
 
 **Ожидаемый результат:** CRUD операции работают
@@ -319,54 +426,64 @@ async def delete_task(
 #### 3.1 SQLAlchemy модель Interaction
 **Файл:** `app/models/interaction.py`
 
-**Поля:**
-- id (Integer, PK)
-- client_id (Integer, FK → clients.id)
-- user_id (Integer, FK → users.id)
-- type (String) — call, meeting, email, note
-- description (Text)
-- created_at (DateTime)
-- is_internal (Boolean, default=False)
-
 ```python
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean
+from sqlalchemy.orm import relationship
+from app.database import Base
+from datetime import datetime
+
 class Interaction(Base):
+    """Сущность Взаимодействие в базе данных"""
     __tablename__ = "interactions"
     
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"))
-    user_id = Column(Integer, ForeignKey("users.id"))
-    type = Column(String(20))  # call, meeting, email, note
-    description = Column(Text)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    type = Column(String(20), nullable=False)  # call, meeting, email, note
+    description = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_internal = Column(Boolean, default=False)
     
+    # Связи
     client = relationship("Client", back_populates="interactions")
-    user = relationship("User")
+    user = relationship("User", back_populates="interactions")
 ```
 
 **Ожидаемый результат:** Модель создана
 
 ---
 
-#### 3.2 Pydantic схемы для Interaction
-**Файл:** `app/schemas/interaction.py`
-
-**Создай схемы:**
+#### 3.2 Pydantic DTO для Interaction
+**Файл:** `app/dtos/interaction.py`
 
 ```python
 from pydantic import BaseModel, Field
 from datetime import datetime
+from enum import Enum
 
-class InteractionCreate(BaseModel):
+class InteractionType(str, Enum):
+    """Типы взаимодействий"""
+    CALL = "call"
+    MEETING = "meeting"
+    EMAIL = "email"
+    NOTE = "note"
+
+class InteractionCreateDTO(BaseModel):
+    """DTO для создания взаимодействия"""
     client_id: int
-    type: str = Field(..., pattern="^(call|meeting|email|note)$")
-    description: str
+    type: InteractionType
+    description: str = Field(..., min_length=1)
     is_internal: bool = False
 
-class InteractionResponse(InteractionCreate):
+class InteractionResponseDTO(BaseModel):
+    """DTO для ответа"""
     id: int
+    client_id: int
     user_id: int
+    type: InteractionType
+    description: str
     created_at: datetime
+    is_internal: bool
     
     class Config:
         from_attributes = True
@@ -374,40 +491,119 @@ class InteractionResponse(InteractionCreate):
 
 ---
 
-#### 3.3 Роутер для Interaction
-**Файл:** `app/routers/interactions.py`
-
-**Эндпоинты:**
+#### 3.3 Сервис для Interaction
+**Файл:** `app/services/interaction_service.py`
 
 ```python
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.models.interaction import Interaction
+from app.dtos.interaction import InteractionCreateDTO
+from typing import List, Optional
+
+class InteractionService:
+    """Сервис для работы с взаимодействиями"""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def create(self, interaction_data: InteractionCreateDTO, user_id: int) -> Interaction:
+        """Создать новое взаимодействие"""
+        interaction = Interaction(
+            **interaction_data.model_dump(),
+            user_id=user_id
+        )
+        self.db.add(interaction)
+        await self.db.commit()
+        await self.db.refresh(interaction)
+        return interaction
+    
+    async def get_by_client(
+        self,
+        client_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Interaction]:
+        """Получить историю взаимодействий клиента"""
+        result = await self.db.execute(
+            select(Interaction)
+            .where(Interaction.client_id == client_id)
+            .offset(skip)
+            .limit(limit)
+            .order_by(Interaction.created_at.desc())
+        )
+        return list(result.scalars().all())
+    
+    async def get_all(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        client_id: int | None = None
+    ) -> List[Interaction]:
+        """Получить все взаимодействия"""
+        query = select(Interaction).order_by(Interaction.created_at.desc())
+        
+        if client_id:
+            query = query.where(Interaction.client_id == client_id)
+        
+        query = query.offset(skip).limit(limit)
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+```
+
+---
+
+#### 3.4 Роутер для Interaction
+**Файл:** `app/routes/interactions.py`
+
+```python
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.dtos.interaction import InteractionCreateDTO, InteractionResponseDTO
+from app.services.interaction_service import InteractionService
+from app.models.user import User
+from app.deps.auth import get_current_user
+from typing import List
+
 router = APIRouter(prefix="/api/interactions", tags=["Interactions"])
 
-# GET / — получить все взаимодействия (для админа)
-@router.get("/", response_model=list[InteractionResponse])
+@router.get("/", response_model=List[InteractionResponseDTO])
 async def get_interactions(
-    client_id: int | None = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    client_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить список взаимодействий"""
+    service = InteractionService(db)
+    interactions = await service.get_all(skip=skip, limit=limit, client_id=client_id)
+    return interactions
 
-# GET /client/{client_id} — получить историю клиента
-@router.get("/client/{client_id}", response_model=list[InteractionResponse])
+@router.get("/client/{client_id}", response_model=List[InteractionResponseDTO])
 async def get_client_interactions(
     client_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить историю взаимодействий с клиентом"""
+    service = InteractionService(db)
+    interactions = await service.get_by_client(client_id, skip=skip, limit=limit)
+    return interactions
 
-# POST / — создать взаимодействие
-@router.post("/", response_model=InteractionResponse, status_code=201)
+@router.post("/", response_model=InteractionResponseDTO, status_code=status.HTTP_201_CREATED)
 async def create_interaction(
-    interaction_data: InteractionCreate,
+    interaction_data: InteractionCreateDTO,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Создать запись о взаимодействии"""
+    service = InteractionService(db)
+    interaction = await service.create(interaction_data, user_id=current_user.id)
+    return interaction
 ```
 
 ---
@@ -416,25 +612,98 @@ async def create_interaction(
 
 ### Задачи
 
-#### 4.1 Статистика для дашборда
-**Файл:** `app/routers/dashboard.py`
+#### 4.1 Сервис для Дашборда
+**Файл:** `app/services/dashboard_service.py`
 
-**Эндпоинт:**
 ```python
-@router.get("/api/dashboard/stats")
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from app.models.client import Client
+from app.models.deal import Deal
+from app.models.task import Task
+from app.dtos.deal import DealStatus
+from app.dtos.task import TaskStatus
+from datetime import datetime
+
+class DashboardService:
+    """Сервис для получения статистики дашборда"""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def get_stats(self) -> dict:
+        """Получить статистику для дашборда"""
+        # Всего клиентов
+        clients_result = await self.db.execute(select(func.count(Client.id)))
+        total_clients = clients_result.scalar()
+        
+        # Активных сделок (new, negotiation)
+_result = await self.db.execute(
+                   active_deals select(func.count(Deal.id)).where(
+                Deal.status.in_([DealStatus.NEW.value, DealStatus.NEGOTIATION.value])
+            )
+        )
+        active_deals = active_deals_result.scalar()
+        
+        # Выигранных сделок
+        won_deals_result = await self.db.execute(
+            select(func.count(Deal.id)).where(Deal.status == DealStatus.WON.value)
+        )
+        won_deals = won_deals_result.scalar()
+        
+        # Сумма выигранных сделок
+        won_amount_result = await self.db.execute(
+            select(func.sum(Deal.amount)).where(Deal.status == DealStatus.WON.value)
+        )
+        total_won_amount = float(won_amount_result.scalar() or 0)
+        
+        # Открытых задач
+        open_tasks_result = await self.db.execute(
+            select(func.count(Task.id)).where(Task.status != TaskStatus.DONE.value)
+        )
+        open_tasks = open_tasks_result.scalar()
+        
+        # Просроченных задач
+        now = datetime.utcnow()
+        overdue_result = await self.db.execute(
+            select(func.count(Task.id)).where(
+                Task.due_date < now,
+                Task.status != TaskStatus.DONE.value
+            )
+        )
+        overdue_tasks = overdue_result.scalar()
+        
+        return {
+            "total_clients": total_clients,
+            "active_deals": active_deals,
+            "won_deals": won_deals,
+            "total_won_amount": total_won_amount,
+            "open_tasks": open_tasks,
+            "overdue_tasks": overdue_tasks
+        }
+```
+
+#### 4.2 Роутер для Дашборда
+**Файл:** `app/routes/dashboard.py`
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.services.dashboard_service import DashboardService
+from app.models.user import User
+from app.deps.auth import get_current_user
+
+router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
+
+@router.get("/stats")
 async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить статистику для дашборда"""
-    
-    # Вернуть:
-    # - Всего клиентов
-    # - Активных сделок
-    # - Выигранных сделок (won)
-    # - Выполненных задач
-    # - Просроченных задач
-    # - Сумма выигранных сделок
+    service = DashboardService(db)
+    return await service.get_stats()
 ```
 
 **Наводящий вопрос:** Как найти просроченные задачи?
@@ -467,9 +736,12 @@ feature/tasks-pavel
 ### Коммиты
 ```
 feat: add Task model
-feat: add Task schemas
+feat: add Task DTOs
+feat: add Task service with business logic
 feat: add CRUD endpoints for tasks
 feat: add Interaction model
+feat: add Interaction DTOs
+feat: add Interaction service
 feat: add Interaction endpoints
 feat: add dashboard statistics
 ```
@@ -488,6 +760,7 @@ git push origin feature/tasks-pavel
 ### С Даниилом (Backend Lead)
 - Консультации по архитектуре
 - Проверка кода перед коммитом
+- Проверка DDD структуры
 
 ### С Соней и Эвелиной (Backend)
 - Согласование связей между моделями
@@ -502,12 +775,15 @@ git push origin feature/tasks-pavel
 
 - [ ] Модель Task создана
 - [ ] Модель Interaction создана
+- [ ] Pydantic DTO работают валидацию
+- [ ] Сервисы содержат бизнес-логику
 - [ ] Все CRUD операции работают
 - [ ] Фильтрация задач работает
 - [ ] История взаимодействий клиента работает
 - [ ] Дашборд возвращает статистику
 - [ ] Все операции требуют авторизацию
 - [ ] Документация в коде
+- [ ] DDD структура соблюдена
 
 ---
 
@@ -517,6 +793,7 @@ git push origin feature/tasks-pavel
 |------|------|--------|
 | Подготовка | Неделя 1-2 | |
 | Модель Task | Неделя 9-10 | |
+| DTO и Сервис | Неделя 9-10 | |
 | CRUD операции | Неделя 9-10 | |
 | Interaction | Неделя 11-12 | |
 | Дашборд | Неделя 13 | |

@@ -16,11 +16,58 @@
 
 ---
 
+## DDD Архитектура проекта
+
+### Структура папок
+
+```
+backend/app/
+├── main.py                 # Точка входа FastAPI
+├── config.py              # Конфигурация
+├── database.py            # Подключение к БД
+│
+├── models/                # Domain Layer - SQLAlchemy модели
+│   ├── __init__.py
+│   ├── user.py
+│   ├── client.py
+│   ├── deal.py
+│   ├── task.py
+│   └── interaction.py
+│
+├── dtos/                  # Data Transfer Objects - Pydantic модели
+│   ├── __init__.py
+│   ├── auth.py
+│   ├── client.py
+│   ├── deal.py
+│   ├── task.py
+│   └── interaction.py
+│
+├── services/              # Application Layer - Бизнес-логика
+│   ├── __init__.py
+│   ├── auth_service.py
+│   ├── client_service.py
+│   ├── deal_service.py
+│   ├── task_service.py
+│   └── dashboard_service.py
+│
+└── routes/                # Presentation Layer - HTTP эндпоинты
+    ├── __init__.py
+    ├── auth.py
+    ├── clients.py
+    ├── deals.py
+    ├── tasks.py
+    ├── interactions.py
+    └── dashboard.py
+```
+
+---
+
 ## Этап 1: Подготовка окружения (Неделя 1-2)
 
 ### Задачи
 
 #### 1.1 Создание структуры проекта
+
 ```
 backend/
 ├── app/
@@ -28,7 +75,10 @@ backend/
 │   ├── main.py              # Точка входа
 │   ├── config.py            # Настройки приложения
 │   ├── database.py          # Подключение к БД
-│   └── models/             # SQLAlchemy модели
+│   ├── models/             # SQLAlchemy модели
+│   ├── dtos/               # Pydantic DTO
+│   ├── services/           # Бизнес-логика
+│   └── routes/             # HTTP роутеры
 ├── requirements.txt
 ├── alembic.ini
 └── .env.example
@@ -46,23 +96,36 @@ backend/
 ---
 
 #### 1.2 Настройка PostgreSQL и Docker Compose
-**Взаимодействие с Никопаем (DevOps):** Попроси его предоставить готовый `docker-compose.yml` с PostgreSQL
+**Взаимодействие с Николаем (DevOps):** Попроси его предоставить готовый `docker-compose.yml` с PostgreSQL
 
 **Задачи:**
 1. Настроить подключение к PostgreSQL через SQLAlchemy
 2. Создать файл `.env` с переменными окружения
 3. Протестировать подключение к БД
 
-**Пример аналогии (не решение):**
+**Пример подключения:**
 ```python
-# Представь, что подключаешься к библиотеке
-# Нужно знать: адрес, имя читателя, пароль
-from sqlalchemy.ext.asyncio import create_async_engine
+# app/database.py
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from app.config import settings
 
-DATABASE_URL = "postgresql+asyncpg://user:password@localhost/crm"
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=True,
+    future=True
+)
+
+async_session = sessionmaker(
+    engine, 
+    class_=AsyncSession,
+    expire_on_commit=False
+)
+
+async def get_db():
+    async with async_session() as session:
+        yield session
 ```
-
-**Подсказка:** Используй асинхронный движок `create_async_engine` для работы с FastAPI
 
 **Ожидаемый результат:** Приложение подключается к PostgreSQL
 
@@ -101,19 +164,8 @@ JWT (JSON Web Token) — это способ передачи данных ме�
 - Пропуск имеет срок действия
 - Охранник проверяет пропуск при каждом входе
 
-**Структура JWT:**
-```
-header.payload.signature
-```
-
 #### Password hashing
 Пароли никогда не хранятся в открытом виде! Используется хэширование.
-
-**Аналогия:** Как сейф
-- Пароль "123456" кладётся в сейф
-- В сейф попадает только "зашифрованная" версия
-- При проверке сравниваются "зашифрованные" версии
-- Реальный пароль никогда не хранится
 
 **Инструменты:** `passlib` с алгоритмом bcrypt
 
@@ -121,19 +173,35 @@ header.payload.signature
 
 ### Задачи
 
-#### 2.1 Создание SQLAlchemy модели User
+#### 2.1 SQLAlchemy модель User
 **Файл:** `app/models/user.py`
 
-**Поля:**
-- id (Integer, PK)
-- username (String, unique, not null)
-- email (String, unique, not null)
-- hashed_password (String, not null)
-- full_name (String, nullable)
-- role (String, default="manager") — admin или manager
-- is_active (Boolean, default=True)
-- created_at (DateTime)
-- updated_at (DateTime)
+```python
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy.orm import relationship
+from app.database import Base
+from datetime import datetime
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=True)
+    role = Column(String(20), default="manager")  # admin или manager
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Связи
+    clients = relationship("Client", back_populates="creator")
+    created_deals = relationship("Deal", foreign_keys="Deal.created_by", back_populates="creator")
+    assigned_deals = relationship("Deal", foreign_keys="Deal.assigned_to", back_populates="assignee")
+    assigned_tasks = relationship("Task", foreign_keys="Task.assigned_to", back_populates="assignee")
+    interactions = relationship("Interaction", back_populates="user")
+```
 
 **Ожидаемый результат:** Модель User создана в коде
 
@@ -144,61 +212,159 @@ header.payload.signature
 
 ---
 
-#### 2.2 Pydantic модели для аутентификации
-**Файл:** `app/schemas/auth.py`
-
-**Создай модели:**
+#### 2.2 Pydantic DTO для аутентификации
+**Файл:** `app/dtos/auth.py`
 
 ```python
-# Для регистрации — как анкета при устройстве на работу
-class UserCreate(BaseModel):
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
+
+class UserCreateDTO(BaseModel):
+    """DTO для регистрации нового пользователя"""
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=6)
     full_name: str | None = None
 
-# Для входа — как заполнение пропуска
-class UserLogin(BaseModel):
+class UserLoginDTO(BaseModel):
+    """DTO для входа в систему"""
     username: str
     password: str
 
-# Для ответа — что показываем о себе
-class UserResponse(BaseModel):
+class UserResponseDTO(BaseModel):
+    """DTO для ответа с данными пользователя"""
     id: int
     username: str
     email: str
     full_name: str | None
     role: str
+    is_active: bool
     
     class Config:
         from_attributes = True
+
+class TokenDTO(BaseModel):
+    """DTO для ответа с токеном"""
+    access_token: str
+    token_type: str = "bearer"
 ```
 
-**Ожидаемый результат:** Pydantic схемы готовы
+**Ожидаемый результат:** Pydantic DTO готовы
 
 ---
 
-#### 2.3 Реализация хэширования паролей
-**Файл:** `app/utils/auth.py`
-
-**Инструменты:** `passlib[bcrypt]`, `python-jose`, `python-multipart`
+#### 2.3 Сервис авторизации
+**Файл:** `app/services/auth_service.py`
 
 ```python
-# Аналогия: Шифрование сейфа
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.models.user import User
+from app.dtos.auth import UserCreateDTO, UserLoginDTO
+from app.utils.auth import hash_password, verify_password, create_access_token
+from datetime import timedelta
+from app.config import settings
+from typing import Optional
+
+class AuthService:
+    """Сервис для работы с аутентификацией"""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def register(self, user_data: UserCreateDTO) -> User:
+        """Регистрация нового пользователя"""
+        # Проверка, что пользователь уже существует
+        result = await self.db.execute(
+            select(User).where(
+                (User.username == user_data.username) | 
+                (User.email == user_data.email)
+            )
+        )
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            raise ValueError("Пользователь уже существует")
+        
+        # Создание нового пользователя
+        user = User(
+            username=user_data.username,
+            email=user_data.email,
+            hashed_password=hash_password(user_data.password),
+            full_name=user_data.full_name
+        )
+        
+        self.db.add(user)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+    
+    async def login(self, credentials: UserLoginDTO) -> dict:
+        """Вход в систему"""
+        result = await self.db.execute(
+            select(User).where(User.username == credentials.username)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user or not verify_password(credentials.password, user.hashed_password):
+            raise ValueError("Неверные учетные данные")
+        
+        if not user.is_active:
+            raise ValueError("Пользователь неактивен")
+        
+        # Создание токена
+        access_token = create_access_token(
+            data={"sub": user.username},
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+    
+    async def get_by_username(self, username: str) -> Optional[User]:
+        """Получить пользователя по имени"""
+        result = await self.db.execute(
+            select(User).where(User.username == username)
+        )
+        return result.scalar_one_or_none()
+```
+
+---
+
+#### 2.4 Утилиты для работы с паролями и токенами
+**Файл:** `app/utils/auth.py`
+
+```python
 from passlib.context import CryptContext
+from jose import jwt, JWTError
+from datetime import datetime, timedelta
+from app.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
-    """Превращает пароль в хэш"""
+    """Хэширование пароля"""
     return pwd_context.hash(password)
 
-def verify_password(plain: str, hashed: str) -> bool:
-    """Проверяет, совпадает ли пароль с хэшем"""
-    return pwd_context.verify(plain, hashed)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Проверка пароля"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
+    """Создание JWT токена"""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=30))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+def decode_token(token: str) -> dict:
+    """Расшифровка токена"""
+    return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
 ```
 
-**Ожидаемый результат:** Функции хэширования работают
+**Ожидаемый результат:** Утилиты работают
 
 **Критерии приёмки:**
 - [ ] Функция `hash_password("secret")` возвращает хэш
@@ -206,53 +372,31 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 ---
 
-#### 2.4 Создание JWT токенов
-**Файл:** `app/utils/auth.py`
-
-```python
-# Аналогия: Изготовление пропуска
-from datetime import datetime, timedelta
-from jose import jwt
-
-SECRET_KEY = "твой-секретный-ключ"  # В реальном проекте — из .env
-ALGORITHM = "HS256"
-
-def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
-    """Создаёт JWT токен"""
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=30))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def decode_token(token: str) -> dict:
-    """Расшифровывает токен"""
-    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-```
-
-**Подсказка:** SECRET_KEY должен быть в `.env` и никогда не попадать в Git!
-
-**Ожидаемый результат:** Токены создаются и валидируются
-
----
-
 #### 2.5 Зависимость для получения текущего пользователя
 **Файл:** `app/deps/auth.py`
 
 ```python
-# Аналогия: Охранник на проходной
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.models.user import User
+from app.services.auth_service import AuthService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
-    """Проверяет токен и возвращает пользователя"""
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> User:
+    """Проверяет токен и возвращает текущего пользователя"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Неверные учетные данные",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
     try:
         payload = decode_token(token)
         username: str = payload.get("sub")
@@ -261,8 +405,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     except JWTError:
         raise credentials_exception
     
-    # Здесь нужно получить пользователя из БД
-    user = await get_user_by_username(username)
+    service = AuthService(db)
+    user = await service.get_by_username(username)
     if user is None:
         raise credentials_exception
     return user
@@ -273,39 +417,49 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
 ---
 
 #### 2.6 Роутеры аутентификации
-**Файл:** `app/routers/auth.py`
-
-**Эндпоинты:**
+**Файл:** `app/routes/auth.py`
 
 ```python
-@router.post("/register", response_model=UserResponse)
-async def register(user_data: UserCreate):
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.dtos.auth import UserCreateDTO, UserLoginDTO, UserResponseDTO, TokenDTO
+from app.services.auth_service import AuthService
+from app.deps.auth import get_current_user
+from app.models.user import User
+
+router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+@router.post("/register", response_model=UserResponseDTO, status_code=status.HTTP_201_CREATED)
+async def register(
+    user_data: UserCreateDTO,
+    db: AsyncSession = Depends(get_db)
+):
     """Регистрация нового пользователя"""
-    # 1. Проверить, что пользователь уже существует
-    # 2. Хэшировать пароль
-    # 3. Создать пользователя в БД
-    # 4. Вернуть данные пользователя
+    service = AuthService(db)
+    try:
+        user = await service.register(user_data)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/login")
-async def login(credentials: UserLogin):
+@router.post("/login", response_model=TokenDTO)
+async def login(
+    credentials: UserLoginDTO,
+    db: AsyncSession = Depends(get_db)
+):
     """Вход в систему"""
-    # 1. Найти пользователя по username
-    # 2. Проверить пароль
-    # 3. Создать JWT токен
-    # 4. Вернуть токен
+    service = AuthService(db)
+    try:
+        token_data = await service.login(credentials)
+        return token_data
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserResponseDTO)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Получить данные текущего пользователя"""
     return current_user
-```
-
-**Формат ответа при логине:**
-```json
-{
-    "access_token": "eyJ...",
-    "token_type": "bearer"
-}
 ```
 
 **Ожидаемый результат:** Все эндпоинты работают
@@ -318,23 +472,53 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 ---
 
-## Этап 3: Интеграция и тестирование (Неделя 14-15)
+## Этап 3: Подключение роутеров в main.py
+
+**Файл:** `app/main.py`
+
+```python
+from fastapi import FastAPI
+from app.routes import auth, clients, deals, tasks, dashboard
+from app.database import engine
+from app.models import user  # Импорт для создания таблиц
+
+app = FastAPI(title="CRM API", version="1.0.0")
+
+# Подключение роутеров
+app.include_router(auth.router)
+app.include_router(clients.router)
+app.include_router(deals.router)
+app.include_router(tasks.router)
+app.include_router(dashboard.router)
+
+@app.get("/")
+async def root():
+    return {"message": "CRM API"}
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+```
+
+---
+
+## Этап 4: Интеграция и тестирование (Неделя 14-15)
 
 ### Задачи
 
-#### 3.1 Координация бэкенд-команды
+#### 4.1 Координация бэкенд-команды
 1. Проверить, что все CRUD операции работают
 2. Проверить связи между моделями
 3. Убедиться, что аутентификация работает везде
 
-#### 3.2 Тестирование с фронтендом
+#### 4.2 Тестирование с фронтендом
 **Взаимодействие с Дмитрием:**
 1. Предоставить актуальную документацию API
 2. Помогать с вопросами по интеграции
 3. Тестировать совместную работу
 
-#### 3.3 Деплой
-**Взаимодействие с Никопаем:**
+#### 4.3 Деплой
+**Взаимодействие с Николаем:**
 1. Убедиться, что все миграции работают
 2. Проверить переменные окружения для продакшена
 3. Протестировать на production сервере
@@ -350,12 +534,12 @@ feature/auth-daniil
 
 ### Коммиты
 ```
-feat: add project structure
+feat: add project structure with DDD
 feat: add database connection
 feat: add User model
-feat: add password hashing utilities
-feat: add JWT token generation
-feat: add authentication endpoints
+feat: add auth DTOs
+feat: add auth service
+feat: add authentication routes
 ```
 
 ### Перед слиянием в main
@@ -372,6 +556,7 @@ git push origin feature/auth-daniil
 ## Критерии приёмки всего этапа
 
 - [ ] Приложение запускается без ошибок
+- [ ] DDD структура соблюдена
 - [ ] Все эндпоинты аутентификации работают
 - [ ] Пароли хэшируются и проверяются корректно
 - [ ] JWT токены создаются и валидируются
@@ -391,7 +576,12 @@ git push origin feature/auth-daniil
 
 ### Взаимодействие с Соней
 - Помощь с настройкой SQLAlchemy
-- Консультации по Pydantic
+- Консультации по Pydantic DTO
+- Проверка DDD структуры
+
+### Взаимодействие с Эвелиной
+- Помощь с настройкой SQLAlchemy
+- Консультации по DTO для Deals
 
 ### Взаимодействие с Дмитрием
 - Согласование формата API

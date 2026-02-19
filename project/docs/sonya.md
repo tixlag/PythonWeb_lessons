@@ -10,56 +10,28 @@
 
 1. Реализация API для сущности "Клиент"
 2. Работа с базой данных
-3. Валидация входных данных
-4. Написание документации для своего API
-5. Взаимодействие с Frontend (Иван)
+3. Валидация входных данных через DTO
+4. Бизнес-логика в сервисах
+5. Написание документации для своего API
+6. Взаимодействие с Frontend (Иван)
 
 ---
 
-## Теоретический материал
+## DDD Архитектура
 
-### CRUD операции
+### Структура файлов для клиентов
 
-CRUD расшифровывается как Create, Read, Update, Delete — четыре базовые операции с данными.
-
-**Аналогия — Библиотека:**
-- **Create (Создать):** Добавить новую книгу в каталог
-- **Read (Прочитать):** Найти книгу в каталоге
-- **Update (Обновить):** Изменить информацию о книге
-- **Delete (Удалить):** Удалить книгу из каталога
-
-### SQLAlchemy Relationships
-
-Связи между таблицами в базе данных.
-
-**Аналогия:**
 ```
-Клиент (Client) → имеет → Много сделок (Deals)
+app/
+├── models/
+│   └── client.py          # SQLAlchemy модель
+├── dtos/
+│   └── client.py         # Pydantic DTO
+├── services/
+│   └── client_service.py # Бизнес-логика
+└── routes/
+    └── clients.py       # HTTP эндпоинты
 ```
-
-В коде это выглядит так:
-```python
-# У клиента может быть много сделок
-class Client(Base):
-    __tablename__ = "clients"
-    id = Column(Integer, primary_key=True)
-    deals = relationship("Deal", back_populates="client")
-
-# Сделка принадлежит одному клиенту
-class Deal(Base):
-    __tablename__ = "deals"
-    id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"))
-    client = relationship("Client", back_populates="deals")
-```
-
-### Пагинация
-
-Пагинация — это разбиение большого списка на страницы.
-
-**Аналогия:** Поиск в Google
-- Показывается 10 результатов на странице
-- Есть кнопки "Следующая", "Предыдущая"
 
 ---
 
@@ -85,78 +57,49 @@ class Deal(Base):
 
 **Изучить:**
 - Как настроена база данных (спросить у Даниила)
-- Как созданы другие модели (спросить у Даниила)
+- Как созданы модели (посмотреть у Даниила)
+- Как созданы DTO (посмотреть у Даниила)
+- Как созданы сервисы (посмотреть у Даниила)
 - Как созданы роутеры (спросить у Даниила)
 
-**Ожидаемый результат:** Понимание архитектуры проекта
+**Ожидаемый результат:** Понимание DDD архитектуры проекта
 
 ---
 
 ## Этап 2: Модель Client (Неделя 5-6)
-
-### Теоретический материал
-
-### Pydantic модели
-
-Pydantic — это библиотека для валидации данных.
-
-**Пример аналогии (не решение задачи!):**
-
-Представь, что заполняешь анкету в банке:
-```python
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
-
-# Анкета на кредит
-class CreditApplication(BaseModel):
-    # Обязательные поля
-    full_name: str = Field(..., min_length=2, max_length=100)
-    income: int = Field(..., gt=0)  # больше 0
-    
-    # Проверка email автоматически
-    email: EmailStr
-    
-    # Необязательное поле
-    phone: Optional[str] = None
-```
-
-**Задание:** Подумай, какие поля должны быть у "Клиента" в CRM?
-
----
 
 ### Задачи
 
 #### 2.1 SQLAlchemy модель Client
 **Файл:** `app/models/client.py`
 
-**Поля:**
-- id (Integer, PK)
-- name (String, not null) — название компании или ФИО
-- email (String, nullable)
-- phone (String, nullable)
-- company_name (String, nullable)
-- address (String, nullable)
-- notes (Text, nullable)
-- created_by (Integer, FK → users.id)
-- created_at (DateTime)
-- updated_at (DateTime)
-
 ```python
-# Шаблон (не готовое решение!):
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
+from datetime import datetime
 
 class Client(Base):
+    """Сущность Клиент в базе данных"""
     __tablename__ = "clients"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-    email = Column(String(255), nullable=True)
-    # ... добавь остальные поля
+    name = Column(String(255), nullable=False, index=True)
+    email = Column(String(255), nullable=True, index=True)
+    phone = Column(String(50), nullable=True)
+    company_name = Column(String(255), nullable=True)
+    address = Column(String(500), nullable=True)
+    notes = Column(Text, nullable=True)
+    
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Связи
-    created_by_user = relationship("User", back_populates="clients")
+    creator = relationship("User", back_populates="clients")
+    deals = relationship("Deal", back_populates="client", cascade="all, delete-orphan")
+    tasks = relationship("Task", back_populates="client", cascade="all, delete-orphan")
+    interactions = relationship("Interaction", back_populates="client", cascade="all, delete-orphan")
 ```
 
 **Подсказка:** Не забудь добавить `index=True` для полей, по которым будет поиск
@@ -170,135 +113,232 @@ class Client(Base):
 
 ---
 
-#### 2.2 Pydantic схемы для Client
-**Файл:** `app/schemas/client.py`
-
-**Создай 4 схемы:**
+#### 2.2 Pydantic DTO для Client
+**Файл:** `app/dtos/client.py`
 
 ```python
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 
-# 1. При создании — какие данные нужны от клиента
-class ClientCreate(BaseModel):
+class ClientCreateDTO(BaseModel):
+    """DTO для создания клиента"""
     name: str = Field(..., min_length=1, max_length=255)
     email: EmailStr | None = None
-    phone: str | None = None
-    company_name: str | None = None
-    address: str | None = None
+    phone: str | None = Field(None, max_length=50)
+    company_name: str | None = Field(None, max_length=255)
+    address: str | None = Field(None, max_length=500)
     notes: str | None = None
 
-# 2. При обновлении — все поля необязательные
-class ClientUpdate(BaseModel):
+class ClientUpdateDTO(BaseModel):
+    """DTO для обновления клиента (все поля опциональные)"""
     name: str | None = Field(None, min_length=1, max_length=255)
     email: EmailStr | None = None
-    # ... остальные поля
+    phone: str | None = Field(None, max_length=50)
+    company_name: str | None = Field(None, max_length=255)
+    address: str | None = Field(None, max_length=500)
+    notes: str | None = None
 
-# 3. Полная информация о клиенте (для чтения)
-class ClientResponse(ClientCreate):
+class ClientResponseDTO(BaseModel):
+    """DTO для ответа (включает все поля)"""
     id: int
+    name: str
+    email: str | None
+    phone: str | None
+    company_name: str | None
+    address: str | None
+    notes: str | None
     created_by: int
     created_at: datetime
     updated_at: datetime
     
     class Config:
         from_attributes = True
-
-# 4. Для пагинации
-class ClientListResponse(BaseModel):
-    items: list[ClientResponse]
-    total: int
-    page: int
-    page_size: int
 ```
 
-**Ожидаемый результат:** Схемы готовы
+**Ожидаемый результат:** DTO готовы
 
 ---
 
-#### 2.3 Роутер для Client
-**Файл:** `app/routers/clients.py`
-
-**Эндпоинты:**
+#### 2.3 Сервис для Client
+**Файл:** `app/services/client_service.py`
 
 ```python
-from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.deps import get_db
+from sqlalchemy import select, func, or_
+from app.models.client import Client
+from app.dtos.client import ClientCreateDTO, ClientUpdateDTO
+from typing import List, Optional, Tuple
+
+class ClientService:
+    """Сервис для работы с клиентами"""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def create(self, client_data: ClientCreateDTO, created_by: int) -> Client:
+        """Создать нового клиента"""
+        client = Client(
+            **client_data.model_dump(),
+            created_by=created_by
+        )
+        self.db.add(client)
+        await self.db.commit()
+        await self.db.refresh(client)
+        return client
+    
+    async def get_by_id(self, client_id: int) -> Optional[Client]:
+        """Получить клиента по ID"""
+        result = await self.db.execute(
+            select(Client).where(Client.id == client_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_all(
+        self, 
+        skip: int = 0, 
+        limit: int = 100,
+        search: str | None = None
+    ) -> Tuple[List[Client], int]:
+        """Получить всех клиентов с пагинацией и поиском"""
+        # Базовый запрос
+        query = select(Client)
+        count_query = select(func.count(Client.id))
+        
+        # Поиск по имени или email
+        if search:
+            search_filter = or_(
+                Client.name.ilike(f"%{search}%"),
+                Client.email.ilike(f"%{search}%")
+            )
+            query = query.where(search_filter)
+            count_query = count_query.where(search_filter)
+        
+        # Получаем общее количество
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar()
+        
+        # Пагинация
+        query = query.offset(skip).limit(limit).order_by(Client.created_at.desc())
+        result = await self.db.execute(query)
+        clients = list(result.scalars().all())
+        
+        return clients, total
+    
+    async def update(
+        self, 
+        client_id: int, 
+        client_data: ClientUpdateDTO
+    ) -> Optional[Client]:
+        """Обновить клиента"""
+        client = await self.get_by_id(client_id)
+        if not client:
+            return None
+        
+        update_data = client_data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(client, field, value)
+        
+        await self.db.commit()
+        await self.db.refresh(client)
+        return client
+    
+    async def delete(self, client_id: int) -> bool:
+        """Удалить клиента"""
+        client = await self.get_by_id(client_id)
+        if not client:
+            return False
+        
+        await self.db.delete(client)
+        await self.db.commit()
+        return True
+```
+
+**Ожидаемый результат:** Сервис создан
+
+---
+
+#### 2.4 Роутер для Client
+**Файл:** `app/routes/clients.py`
+
+```python
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.dtos.client import ClientCreateDTO, ClientUpdateDTO, ClientResponseDTO
+from app.services.client_service import ClientService
 from app.models.user import User
 from app.deps.auth import get_current_user
+from typing import List
 
 router = APIRouter(prefix="/api/clients", tags=["Clients"])
 
-# GET / — получить список клиентов с пагинацией
-@router.get("/", response_model=ClientListResponse)
+@router.get("/", response_model=List[ClientResponseDTO])
 async def get_clients(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить список клиентов с пагинацией и поиском"""
-    # 1. Построить запрос к БД
-    # 2. Добавить фильтр по search (поиск по name, email)
-    # 3. Применить пагинацию (offset, limit)
-    # 4. Вернуть результат
+    service = ClientService(db)
+    clients, total = await service.get_all(skip=skip, limit=limit, search=search)
+    return clients
 
-# POST / — создать клиента
-@router.post("/", response_model=ClientResponse, status_code=201)
+@router.post("/", response_model=ClientResponseDTO, status_code=status.HTTP_201_CREATED)
 async def create_client(
-    client_data: ClientCreate,
+    client_data: ClientCreateDTO,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Создать нового клиента"""
-    # 1. Валидировать данные
-    # 2. Создать объект модели
-    # 3. Добавить created_by = current_user.id
-    # 4. Сохранить в БД
-    # 5. Вернуть созданного клиента
+    service = ClientService(db)
+    client = await service.create(client_data, created_by=current_user.id)
+    return client
 
-# GET /{client_id} — получить одного клиента
-@router.get("/{client_id}", response_model=ClientResponse)
+@router.get("/{client_id}", response_model=ClientResponseDTO)
 async def get_client(
     client_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить клиента по ID"""
-    # 1. Найти клиента в БД
-    # 2. Если не найден — 404
-    # 3. Вернуть клиента
+    service = ClientService(db)
+    client = await service.get_by_id(client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client
 
-# PUT /{client_id} — обновить клиента
-@router.put("/{client_id}", response_model=ClientResponse)
+@router.put("/{client_id}", response_model=ClientResponseDTO)
 async def update_client(
     client_id: int,
-    client_data: ClientUpdate,
+    client_data: ClientUpdateDTO,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Обновить клиента"""
-    # 1. Найти клиента
-    # 2. Обновить только переданные поля
-    # 3. Сохранить в БД
+    service = ClientService(db)
+    client = await service.update(client_id, client_data)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client
 
-# DELETE /{client_id} — удалить клиента
-@router.delete("/{client_id}", status_code=204)
+@router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_client(
     client_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Удалить клиента"""
-    # 1. Найти клиента
-    # 2. Удалить из БД
+    service = ClientService(db)
+    success = await service.delete(client_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Client not found")
 ```
 
 **Наводящий вопрос:** Как реализовать мягкое удаление (soft delete)?
-**Подсказка:** Добавь поле `is_deleted` или `deleted_at` в модель
+**Подсказка:** Добавь поле `is_deleted` или `deleted_at` в модель и сервис
 
 **Ожидаемый результат:** CRUD операции работают
 
@@ -328,15 +368,6 @@ async def delete_client(
 
 ---
 
-#### 3.2 Оптимизация
-**Если останется время:**
-
-1. Добавить кэширование
-2. Оптимизировать запросы к БД
-3. Добавить больше индексов
-
----
-
 ## Git Workflow
 
 ### Ветка
@@ -347,7 +378,8 @@ feature/clients-sonya
 ### Коммиты
 ```
 feat: add Client model
-feat: add Client schemas
+feat: add Client DTOs
+feat: add Client service
 feat: add CRUD endpoints for clients
 feat: add search and pagination
 ```
@@ -367,6 +399,7 @@ git push origin feature/clients-sonya
 - Консультации по архитектуре
 - Помощь с SQLAlchemy
 - Проверка кода перед коммитом
+- Проверка DDD структуры
 
 ### С Иваном (Frontend)
 - Согласование формата данных API
@@ -378,13 +411,15 @@ git push origin feature/clients-sonya
 ## Критерии приёмки
 
 - [ ] Модель Client создана
-- [ ] Pydantic схемы работают валидацию
+- [ ] Pydantic DTO работают валидацию
+- [ ] Сервис содержит бизнес-логику
 - [ ] Все CRUD операции работают
 - [ ] Пагинация работает
 - [ ] Поиск по клиентам работает
 - [ ] Все операции требуют авторизацию
 - [ ] Документация в коде (docstrings)
 - [ ] Нет паролей и секретов в коде
+- [ ] DDD структура соблюдена
 
 ---
 
@@ -394,6 +429,7 @@ git push origin feature/clients-sonya
 |------|------|--------|
 | Подготовка | Неделя 1-2 | |
 | Модель Client | Неделя 5-6 | |
+| DTO и Сервис | Неделя 5-6 | |
 | CRUD операции | Неделя 5-6 | |
 | Интеграция | Неделя 14-15 | |
 

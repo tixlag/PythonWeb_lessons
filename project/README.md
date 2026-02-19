@@ -28,22 +28,300 @@ CRM (Customer Relationship Management) — система управления �
 └───────┼────────────┼────────────┼────────────────┼─────────────┘
         │            │            │                │
         └────────────┴────────────┴────────────────┘
-                              │
-                     ┌────────▼────────┐
-                     │   FastAPI API   │
-                     │   (REST API)    │
-                     └────────┬────────┘
-                              │
-                     ┌────────▼────────┐
-                     │   PostgreSQL    │
-                     └─────────────────┘
+                               │
+                      ┌────────▼────────┐
+                      │   FastAPI API   │
+                      │   (REST API)    │
+                      └────────┬────────┘
+                               │
+                      ┌────────▼────────┐
+                      │   PostgreSQL    │
+                      └─────────────────┘
 ```
 
 ---
 
-## 2. База данных: Основные сущности
+## 2. DDD Архитектура Backend
 
-### 2.1 Схема данных
+### 2.1 Структура проекта
+
+Мы используем **Domain-Driven Design (DDD)** архитектуру с чётким разделением на слои:
+
+```
+backend/app/
+├── __init__.py
+├── main.py                 # FastAPI приложение (точка входа)
+├── config.py               # Конфигурация приложения
+├── database.py             # Подключение к БД
+│
+├── models/                 # СЛОЙ МОДЕЛЕЙ (Domain Layer)
+│   ├── __init__.py
+│   ├── user.py             # Модель пользователя
+│   ├── client.py           # Модель клиента
+│   ├── deal.py            # Модель сделки
+│   ├── task.py            # Модель задачи
+│   └── interaction.py     # Модель взаимодействия
+│
+├── dtos/                   # СЛОЙ DTO (Data Transfer Objects)
+│   ├── __init__.py
+│   ├── auth.py             # DTO для аутентификации
+│   ├── client.py          # DTO для клиентов
+│   ├── deal.py           # DTO для сделок
+│   ├── task.py           # DTO для задач
+│   └── interaction.py    # DTO для взаимодействий
+│
+├── services/               # СЛОЙ СЕРВИСОВ (Application Layer)
+│   ├── __init__.py
+│   ├── auth_service.py    # Бизнес-логика авторизации
+│   ├── client_service.py  # Бизнес-логика клиентов
+│   ├── deal_service.py   # Бизнес-логика сделок
+│   ├── task_service.py   # Бизнес-логика задач
+│   └── dashboard_service.py # Бизнес-логика дашборда
+│
+└── routes/                 # СЛОЙ ROUTES (Presentation Layer)
+    ├── __init__.py
+    ├── auth.py            # HTTP эндпоинты авторизации
+    ├── clients.py        # HTTP эндпоинты клиентов
+    ├── deals.py         # HTTP эндпоинты сделок
+    ├── tasks.py        # HTTP эндпоинты задач
+    ├── interactions.py # HTTP эндпоинты взаимодействий
+    └── dashboard.py    # HTTP эндпоинты дашборда
+```
+
+### 2.2 Слои архитектуры
+
+#### Слой Models (Domain Layer)
+**Назначение:** Определение сущностей базы данных с помощью SQLAlchemy
+
+**Пример модели:**
+```python
+# app/models/client.py
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy.orm import relationship
+from app.database import Base
+from datetime import datetime
+
+class Client(Base):
+    """Сущность Клиент в базе данных"""
+    __tablename__ = "clients"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(50), nullable=True)
+    company_name = Column(String(255), nullable=True)
+    address = Column(String(500), nullable=True)
+    notes = Column(Text, nullable=True)
+    
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Связи
+    creator = relationship("User", back_populates="clients")
+    deals = relationship("Deal", back_populates="client")
+    tasks = relationship("Task", back_populates="client")
+    interactions = relationship("Interaction", back_populates="client")
+```
+
+#### Слой DTO (Data Transfer Objects)
+**Назначение:** Pydantic модели для валидации данных при передаче между слоями
+
+**Пример DTO:**
+```python
+# app/dtos/client.py
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
+from datetime import datetime
+
+class ClientCreateDTO(BaseModel):
+    """DTO для создания клиента"""
+    name: str = Field(..., min_length=1, max_length=255)
+    email: EmailStr | None = None
+    phone: str | None = Field(None, max_length=50)
+    company_name: str | None = Field(None, max_length=255)
+    address: str | None = Field(None, max_length=500)
+    notes: str | None = None
+
+class ClientUpdateDTO(BaseModel):
+    """DTO для обновления клиента (все поля опциональные)"""
+    name: str | None = Field(None, min_length=1, max_length=255)
+    email: EmailStr | None = None
+    phone: str | None = Field(None, max_length=50)
+    company_name: str | None = Field(None, max_length=255)
+    address: str | None = Field(None, max_length=500)
+    notes: str | None = None
+
+class ClientResponseDTO(BaseModel):
+    """DTO для ответа (включает все поля)"""
+    id: int
+    name: str
+    email: str | None
+    phone: str | None
+    company_name: str | None
+    address: str | None
+    notes: str | None
+    created_by: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+```
+
+#### Слой Services (Application Layer)
+**Назначение:** Бизнес-логика приложения
+
+**Пример сервиса:**
+```python
+# app/services/client_service.py
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.models.client import Client
+from app.dtos.client import ClientCreateDTO, ClientUpdateDTO
+from typing import List, Optional
+
+class ClientService:
+    """Сервис для работы с клиентами"""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def create(self, client_data: ClientCreateDTO, created_by: int) -> Client:
+        """Создать нового клиента"""
+        client = Client(
+            **client_data.model_dump(),
+            created_by=created_by
+        )
+        self.db.add(client)
+        await self.db.commit()
+        await self.db.refresh(client)
+        return client
+    
+    async def get_by_id(self, client_id: int) -> Optional[Client]:
+        """Получить клиента по ID"""
+        result = await self.db.execute(
+            select(Client).where(Client.id == client_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_all(self, skip: int = 0, limit: int = 100) -> List[Client]:
+        """Получить всех клиентов"""
+        result = await self.db.execute(
+            select(Client).offset(skip).limit(limit)
+        )
+        return list(result.scalars().all())
+    
+    async def update(self, client_id: int, client_data: ClientUpdateDTO) -> Optional[Client]:
+        """Обновить клиента"""
+        client = await self.get_by_id(client_id)
+        if not client:
+            return None
+        
+        update_data = client_data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(client, field, value)
+        
+        await self.db.commit()
+        await self.db.refresh(client)
+        return client
+    
+    async def delete(self, client_id: int) -> bool:
+        """Удалить клиента"""
+        client = await self.get_by_id(client_id)
+        if not client:
+            return False
+        
+        await self.db.delete(client)
+        await self.db.commit()
+        return True
+```
+
+#### Слой Routes (Presentation Layer)
+**Назначение:** HTTP эндпоинты (API роутеры)
+
+**Пример роутера:**
+```python
+# app/routes/clients.py
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.dtos.client import ClientCreateDTO, ClientUpdateDTO, ClientResponseDTO
+from app.services.client_service import ClientService
+from app.models.user import User
+from app.routes.auth import get_current_user
+from typing import List
+
+router = APIRouter(prefix="/api/clients", tags=["Clients"])
+
+@router.get("/", response_model=List[ClientResponseDTO])
+async def get_clients(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Получить список всех клиентов"""
+    service = ClientService(db)
+    clients = await service.get_all(skip=skip, limit=limit)
+    return clients
+
+@router.post("/", response_model=ClientResponseDTO, status_code=status.HTTP_201_CREATED)
+async def create_client(
+    client_data: ClientCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Создать нового клиента"""
+    service = ClientService(db)
+    client = await service.create(client_data, created_by=current_user.id)
+    return client
+
+@router.get("/{client_id}", response_model=ClientResponseDTO)
+async def get_client(
+    client_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Получить клиента по ID"""
+    service = ClientService(db)
+    client = await service.get_by_id(client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client
+
+@router.put("/{client_id}", response_model=ClientResponseDTO)
+async def update_client(
+    client_id: int,
+    client_data: ClientUpdateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Обновить клиента"""
+    service = ClientService(db)
+    client = await service.update(client_id, client_data)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client
+
+@router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_client(
+    client_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Удалить клиента"""
+    service = ClientService(db)
+    success = await service.delete(client_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Client not found")
+```
+
+---
+
+## 3. База данных: Основные сущности
+
+### 3.1 Схема данных
 
 ```
 users (Пользователи системы)
@@ -53,7 +331,9 @@ users (Пользователи системы)
 ├── hashed_password
 ├── full_name
 ├── role (admin/manager)
-└── is_active
+├── is_active
+├── created_at
+└── updated_at
 
 clients (Клиенты)
 ├── id (PK)
@@ -102,7 +382,7 @@ interactions (История взаимодействий)
 └── is_internal (boolean - только для сотрудников)
 ```
 
-### 2.2 Взаимодействие сущностей
+### 3.2 Взаимодействие сущностей
 
 ```
 User ─────┬─────► creates ───► Client
@@ -120,9 +400,9 @@ User ─────┬─────► creates ───► Client
 
 ---
 
-## 3. Структура API
+## 4. Структура API
 
-### 3.1 Эндпоинты
+### 4.1 Эндпоинты
 
 | Метод | Путь | Описание |
 |-------|------|----------|
@@ -156,9 +436,9 @@ User ─────┬─────► creates ───► Client
 
 ---
 
-## 4. Распределение задач
+## 5. Распределение задач
 
-### 4.1 Backend-разработка
+### 5.1 Backend-разработка
 
 #### Даниил (Backend Lead)
 
@@ -183,11 +463,11 @@ User ─────┬─────► creates ───► Client
 **Зона ответственности:** Клиенты (Clients CRUD)
 
 **Задачи:**
-1. Pydantic модели для Client
-2. SQLAlchemy модели для Client
-3. CRUD операции для клиентов (Create, Read, Update, Delete)
-4. Пагинация и фильтрация
-5. Валидация данных
+1. SQLAlchemy модель Client
+2. Pydantic DTO для Client
+3. Сервис для Client (бизнес-логика)
+4. CRUD роутеры для клиентов
+5. Пагинация и фильтрация
 
 **Технические навыки для изучения:**
 - Pydantic BaseModel
@@ -201,10 +481,10 @@ User ─────┬─────► creates ───► Client
 **Зона ответственности:** Сделки (Deals)
 
 **Задачи:**
-1. Pydantic модели для Deal
-2. SQLAlchemy модели для Deal
-3. CRUD операции для сделок (Create, Read, Update, Delete)
-4. Связь с клиентами
+1. SQLAlchemy модель Deal
+2. Pydantic DTO для Deal
+3. Сервис для Deal
+4. CRUD роутеры для сделок
 5. Статусы сделок
 
 **Технические навыки для изучения:**
@@ -219,9 +499,9 @@ User ─────┬─────► creates ───► Client
 **Зона ответственности:** Задачи и взаимодействия
 
 **Задачи:**
-1. Pydantic модели для Task
-2. SQLAlchemy модели для Task
-3. CRUD операции для задач
+1. SQLAlchemy модель Task
+2. Pydantic DTO для Task
+3. Сервис для Task
 4. Модель Interaction
 5. Dashboard статистика
 
@@ -232,7 +512,7 @@ User ─────┬─────► creates ───► Client
 
 ---
 
-### 4.2 Frontend-разработка
+### 5.2 Frontend-разработка
 
 #### Дмитрий (Frontend Lead)
 
@@ -271,7 +551,7 @@ User ─────┬─────► creates ───► Client
 
 ---
 
-### 4.3 DevOps
+### 5.3 DevOps
 
 #### Николай (DevOps Engineer)
 
@@ -286,289 +566,9 @@ User ─────┬─────► creates ───► Client
 
 ---
 
-## 5. Методические указания: FastAPI для начинающих
+## 6. Git Workflow
 
-### 5.1 Основы FastAPI
-
-FastAPI — это современный веб-фреймворк для Python с автоматической документацией.
-
-**Пример аналогии (не решение задачи!):**
-
-Представь, что ты пишешь блог. Вот как выглядит базовая структура:
-
-```python
-# Аналогия: Книжная полка (сущность "Книга")
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import Optional
-
-app = FastAPI()
-
-# Модель данных (как анкета для книги)
-class BookCreate(BaseModel):
-    title: str
-    author: str
-    pages: int
-    published_year: int
-
-# Хранилище в памяти (в реальном проекте — база данных)
-books_db = []
-
-# Роутер (стеллаж с книгами)
-@app.post("/books/")
-def create_book(book: BookCreate):
-    books_db.append(book)
-    return {"id": 1, "status": "created"}
-
-@app.get("/books/")
-def get_books():
-    return books_db
-```
-
-**Наводящий вопрос:** Как бы ты описал структуру для "Клиента" вместо "Книги"? Какие поля нужны?
-
----
-
-### 5.2 Роутинг в FastAPI
-
-Роутинг определяет, какой код выполняется при обращении к определённому URL.
-
-**Пример аналогии:**
-
-```python
-# Аналогия: Рецепт приготовления блюда
-@app.get("/recipes/")           # GET - прочитать меню
-def get_recipes():
-    return ["Борщ", "Пельмени", "Оливье"]
-
-@app.post("/recipes/")          # POST - добавить рецепт
-def add_recipe(recipe: Recipe):
-    return {"id": 1}
-
-@app.get("/recipes/{recipe_id}") # GET с параметром
-def get_recipe(recipe_id: int):
-    return {"name": "Борщ", "id": recipe_id}
-
-@app.put("/recipes/{recipe_id}") # PUT - обновить
-def update_recipe(recipe_id: int, recipe: Recipe):
-    return {"status": "updated"}
-
-@app.delete("/recipes/{recipe_id}") # DELETE - удалить
-def delete_recipe(recipe_id: int):
-    return {"status": "deleted"}
-```
-
-**Подсказка:** Обрати внимание на декораторы `@app.get`, `@app.post`, `@app.put`, `@app.delete`. Каждый метод HTTP соответствует определённому действию.
-
----
-
-### 5.3 Pydantic модели
-
-Pydantic обеспечивает валидацию данных "на лету".
-
-**Пример аналогии:**
-
-```python
-# Аналогия: Заявка на кредит в банке
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
-from enum import Enum
-
-class Priority(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-class LoanApplication(BaseModel):
-    # Обязательные поля
-    name: str = Field(..., min_length=2, max_length=100)
-    amount: int = Field(..., gt=0)  # больше 0
-    
-    # Проверяемый email (автоматически!)
-    email: EmailStr
-    
-    # Необязательное поле
-    phone: Optional[str] = None
-    
-    # Значение по умолчанию
-    priority: Priority = Priority.MEDIUM
-
-# FastAPI автоматически:
-# 1. Проверит типы данных
-# 2. Валидирует email
-# 3. Отклонит невалидные данные
-# 4. Сгенерирует документацию
-```
-
-**Задание для понимания:** Какие поля должны быть у модели "Клиент"? Используй аналогию с банковской заявкой.
-
----
-
-### 5.4 Зависимости (Depends)
-
-`Depends` позволяет внедрять зависимости и переиспользовать код.
-
-**Пример аналогии:**
-
-```python
-# Аналогия: Охранник на входе
-from fastapi import Depends
-
-# Функция проверки пропуска
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    # Здесь будет проверка токена
-    return {"user_id": 1, "role": "manager"}
-
-# Использование: охранник пропускает только с пропуском
-@app.get("/protected-data/")
-def get_protected_data(current_user = Depends(get_current_user)):
-    return {"data": "secret", "by": current_user["user_id"]}
-
-# Аналогия: Чтобы войти в здание, нужно пройти через охранника
-# Чтобы получить данные — нужно пройти через get_current_user
-```
-
-**Подсказка:** `Depends` как передача аргументов в функцию, только автоматически от FastAPI.
-
----
-
-### 5.5 Асинхронность
-
-Асинхронность позволяет обрабатывать много запросов одновременно.
-
-**Пример аналогии:**
-
-```python
-import asyncio
-
-# Синхронно (последовательно): Покупатель стоит в очереди к каждому продавцу
-def sync_shopping():
-    item1 = buy_at_store("магазин1")  # ждём
-    item2 = buy_at_store("магазин2")  # ждём
-    item3 = buy_at_store("магазин3")  # ждём
-
-# Асинхронно (параллельно): Один покупатель звонит всем трём сразу
-async def async_shopping():
-    # Создаём задачи
-    task1 = asyncio.create_task(buy_at_store_async("магазин1"))
-    task2 = asyncio.create_task(buy_at_store_async("магазин2"))
-    task3 = asyncio.create_task(buy_at_store_async("магазин3"))
-    
-    # Ждём все результаты
-    item1, item2, item3 = await asyncio.gather(task1, task2, task3)
-
-# В FastAPI:
-@app.get("/sync-endpoint/")        # Обычная функция
-def sync_endpoint():
-    return {"status": "ok"}
-
-@app.get("/async-endpoint/")       # async функция
-async def async_endpoint():
-    await asyncio.sleep(1)  # не блокирует другие запросы
-    return {"status": "ok"}
-```
-
-**Важно:** Работа с базой данных в FastAPI требует асинхронного подключения.
-
----
-
-### 5.6 SQLAlchemy: Работа с базой данных
-
-**Пример аналогии:**
-
-```python
-# Аналогия: Табель учёта работников
-from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
-
-class Worker(Base):
-    __tablename__ = "workers"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    position = Column(String)
-    
-    # Связь: у одного начальника может быть много подчинённых
-    tasks = relationship("Task", back_populates="worker")
-
-class Task(Base):
-    __tablename__ = "tasks"
-    
-    id = Column(Integer, primary_key=True)
-    title = Column(String)
-    worker_id = Column(Integer, ForeignKey("workers.id"))
-    
-    # Обратная связь
-    worker = relationship("Worker", back_populates="tasks")
-
-# Запросы:
-# worker.tasks = все задачи работника
-# task.worker = работник, которому принадлежит задача
-```
-
----
-
-## 6. Методические указания: Frontend (Vanilla JS)
-
-### 6.1 Структура проекта
-
-```
-frontend/
-├── index.html
-├── style.css
-├── app.js
-├── api/
-│   └── client.js
-├── pages/
-│   ├── login.html
-│   ├── clients.html
-│   ├── deals.html
-│   └── tasks.html
-└── components/
-    ├── header.js
-    └── modal.js
-```
-
-### 6.2 Работа с API
-
-**Пример аналогии:**
-
-```javascript
-// Аналогия: Заказ еды в ресторане
-const API_URL = "https://api.crm-system.com";
-
-// GET - посмотреть меню
-async function getClients() {
-    const response = await fetch(`${API_URL}/clients/`, {
-        headers: {
-            "Authorization": `Bearer ${getToken()}`
-        }
-    });
-    return response.json();
-}
-
-// POST - сделать заказ
-async function createClient(clientData) {
-    const response = await fetch(`${API_URL}/clients/`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${getToken()}`
-        },
-        body: JSON.stringify(clientData)
-    });
-    return response.json();
-}
-```
-
----
-
-## 7. Git Workflow
-
-### 7.1 Правила работы с ветками
+### 6.1 Правила работы с ветками
 
 ```
 main (стабильная версия)
@@ -594,7 +594,7 @@ main (стабильная версия)
   └── infrastructure-docker-nikolai
 ```
 
-### 7.2 Алгоритм работы
+### 6.2 Алгоритм работы
 
 1. **Создание ветки:**
    ```bash
@@ -623,7 +623,7 @@ main (стабильная версия)
 
 ---
 
-## 8. Пошаговый план реализации
+## 7. Пошаговый план реализации
 
 ### Неделя 1-2: Подготовка
 
@@ -641,52 +641,57 @@ main (стабильная версия)
 
 ### Неделя 5-6: Backend - Clients
 
-- [ ] Pydantic модели Client
+- [ ] DTO модель Client
+- [ ] Сервис для Client
 - [ ] CRUD операции
 - [ ] Пагинация
 
-### Неделя 7-8: Backend - Deals & Tasks
+### Неделя 7-8: Backend - Deals
 
 - [ ] Модель Deal
-- [ ] Модель Task
-- [ ] Взаимосвязи
+- [ ] DTO для Deal
+- [ ] Сервис для Deal
+- [ ] CRUD операции
 
-### Неделя 9-10: Frontend - Auth
+### Неделя 9-10: Backend - Tasks & Dashboard
+
+- [ ] Модель Task
+- [ ] DTO для Task
+- [ ] Сервис для Task
+- [ ] Модель Interaction
+- [ ] Dashboard статистика
+
+### Неделя 11-12: Frontend - Auth
 
 - [ ] Страница входа
 - [ ] Регистрация
 - [ ] Token management
 
-### Неделя 11-13: Frontend - UI
+### Неделя 13-14: Frontend - UI
 
 - [ ] Клиенты (список, форма)
 - [ ] Сделки (Kanban доска)
 - [ ] Задачи
 
-### Неделя 14-15: Интеграция и тестирование
+### Неделя 15-16: Интеграция и Деплой
 
 - [ ] Связка Frontend ↔ Backend
 - [ ] Исправление багов
-- [ ] UI/UX доработки
-
-### Неделя 16: Деплой
-
 - [ ] Docker production сборка
 - [ ] Nginx настройка
 - [ ] Презентация проекта
 
 ---
 
-## 9. Критерии оценки
+## 8. Критерии оценки
 
 ### Backend (40 баллов)
 - [ ] Корректная работа API (10)
-- [ ] Валидация данных (5)
+- [ ] DDD архитектура (10)
+- [ ] Валидация данных через DTO (5)
+- [ ] Бизнес-логика в сервисах (5)
 - [ ] Обработка ошибок (5)
 - [ ] Безопасность (5)
-- [ ] Архитектура кода (5)
-- [ ] Документация (5)
-- [ ] Тесты (5)
 
 ### Frontend (40 баллов)
 - [ ] Функциональность (10)
@@ -704,7 +709,7 @@ main (стабильная версия)
 
 ---
 
-## 10. Ресурсы для изучения
+## 9. Ресурсы для изучения
 
 ### FastAPI
 - Официальная документация: https://fastapi.tiangolo.com/
@@ -712,6 +717,12 @@ main (стабильная версия)
 
 ### SQLAlchemy
 - Документация: https://docs.sqlalchemy.org/
+
+### Pydantic
+- Документация: https://docs.pydantic.dev/
+
+### DDD Architecture
+- Статьи о Domain-Driven Design для Python
 
 ### Vanilla JS
 - MDN Web Docs: https://developer.mozilla.org/ru/docs/Web/JavaScript

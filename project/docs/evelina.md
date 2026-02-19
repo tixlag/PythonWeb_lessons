@@ -10,72 +10,27 @@
 
 1. Реализация API для сущности "Сделка" (Deal)
 2. Работа с базой данных
-3. Валидация входных данных
-4. Управление статусами сделок
-5. Взаимодействие с Frontend (Александр)
+3. Валидация входных данных через DTO
+4. Бизнес-логика в сервисах
+5. Управление статусами сделок
+6. Взаимодействие с Frontend (Александр)
 
 ---
 
-## Теоретический материал
+## DDD Архитектура
 
-### Enum в Python
+### Структура файлов для сделок
 
-Enum (перечисление) — это набор именованных констант.
-
-**Пример аналогии (не решение задачи!):**
-
-Представь статус заказа в магазине:
-```python
-from enum import Enum
-
-class OrderStatus(str, Enum):
-    """Статусы заказа"""
-    PENDING = "pending"      # Ожидает
-    PROCESSING = "processing" # В обработке
-    SHIPPED = "shipped"      # Отправлен
-    DELIVERED = "delivered"  # Доставлен
-    CANCELLED = "cancelled"  # Отменён
 ```
-
-**Зачем использовать Enum:**
-- Ограничивает возможные значения
-- Автодополнение в IDE
-- Предотвращает опечатки
-
-### Связи между таблицами (ForeignKey)
-
-Связь "многие к одному" — у одной сущности может быть ссылка на другую.
-
-**Аналогия:**
-```
-Сделка → относится к → Клиент
-```
-
-В коде:
-```python
-class Deal(Base):
-    __tablename__ = "deals"
-    
-    id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"))  # Ссылка на клиента
-    
-    # Объект клиента для удобного доступа
-    client = relationship("Client", back_populates="deals")
-```
-
-### Cascade Delete
-
-Каскадное удаление — что происходит со связанными записями при удалении родительской.
-
-**Аналогия:**
-- Если удалить клиента → что делать с его сделками?
-- Варианты: удалить все сделки, запретить удаление, обнулить ссылку
-
-**В коде:**
-```python
-# Удалить все связанные сделки при удалении клиента
-class Client(Base):
-    deals = relationship("Deal", cascade="all, delete-orphan")
+app/
+├── models/
+│   └── deal.py          # SQLAlchemy модель
+├── dtos/
+│   └── deal.py         # Pydantic DTO
+├── services/
+│   └── deal_service.py # Бизнес-логика
+└── routes/
+    └── deals.py       # HTTP эндпоинты
 ```
 
 ---
@@ -102,10 +57,12 @@ class Client(Base):
 
 **Изучить:**
 - Модель Client (посмотреть у Сони)
+- DTO клиента (посмотреть у Сони)
+- Сервис клиента (посмотреть у Сони)
 - Как работают роутеры (посмотреть у Даниила)
 - Как настроена аутентификация
 
-**Ожидаемый результат:** Понимание архитектуры проекта
+**Ожидаемый результат:** Понимание DDD архитектуры проекта
 
 ---
 
@@ -137,36 +94,24 @@ class Client(Base):
 #### 2.1 SQLAlchemy модель Deal
 **Файл:** `app/models/deal.py`
 
-**Поля:**
-- id (Integer, PK)
-- title (String, not null) — название сделки
-- client_id (Integer, FK → clients.id)
-- amount (Numeric/Integer) — сумма сделки
-- status (String) — статус: new, negotiation, won, lost
-- created_by (Integer, FK → users.id)
-- assigned_to (Integer, FK → users.id) — ответственный
-- created_at (DateTime)
-- updated_at (DateTime)
-- closed_at (DateTime, nullable)
-
 ```python
-# Шаблон:
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime
 
 class Deal(Base):
+    """Сущность Сделка в базе данных"""
     __tablename__ = "deals"
     
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(255), nullable=False)
-    client_id = Column(Integer, ForeignKey("clients.id"))
+    title = Column(String(255), nullable=False, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     amount = Column(Numeric(12, 2), default=0)
-    status = Column(String(50), default="new")  # new, negotiation, won, lost
+    status = Column(String(20), default="new", index=True)  # new, negotiation, won, lost
     
-    created_by = Column(Integer, ForeignKey("users.id"))
-    assigned_to = Column(Integer, ForeignKey("users.id"))
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -174,8 +119,9 @@ class Deal(Base):
     
     # Связи
     client = relationship("Client", back_populates="deals")
-    creator = relationship("User", foreign_keys=[created_by])
-    assignee = relationship("User", foreign_keys=[assigned_to])
+    creator = relationship("User", foreign_keys=[created_by], back_populates="created_deals")
+    assignee = relationship("User", foreign_keys=[assigned_to], back_populates="assigned_deals")
+    tasks = relationship("Task", back_populates="deal", cascade="all, delete-orphan")
 ```
 
 **Наводящий вопрос:** Как хранить сумму — Integer или Decimal?
@@ -190,45 +136,47 @@ class Deal(Base):
 
 ---
 
-#### 2.2 Pydantic схемы для Deal
-**Файл:** `app/schemas/deal.py`
-
-**Статусы:**
-```python
-from enum import Enum
-
-class DealStatus(str, Enum):
-    NEW = "new"
-    NEGOTIATION = "negotiation"
-    WON = "won"
-    LOST = "lost"
-```
-
-**Схемы:**
+#### 2.2 Pydantic DTO для Deal
+**Файл:** `app/dtos/deal.py`
 
 ```python
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
-from .enums import DealStatus
+from enum import Enum
 
-class DealCreate(BaseModel):
+class DealStatus(str, Enum):
+    """Статусы сделки"""
+    NEW = "new"
+    NEGOTIATION = "negotiation"
+    WON = "won"
+    LOST = "lost"
+
+class DealCreateDTO(BaseModel):
+    """DTO для создания сделки"""
     title: str = Field(..., min_length=1, max_length=255)
     client_id: int
     amount: float = Field(..., ge=0)
     status: DealStatus = DealStatus.NEW
     assigned_to: int | None = None
 
-class DealUpdate(BaseModel):
+class DealUpdateDTO(BaseModel):
+    """DTO для обновления сделки"""
     title: str | None = Field(None, min_length=1, max_length=255)
     client_id: int | None = None
     amount: float | None = Field(None, ge=0)
     status: DealStatus | None = None
     assigned_to: int | None = None
 
-class DealResponse(DealCreate):
+class DealResponseDTO(BaseModel):
+    """DTO для ответа"""
     id: int
+    title: str
+    client_id: int
+    amount: float
+    status: DealStatus
     created_by: int
+    assigned_to: int | None
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
@@ -237,77 +185,237 @@ class DealResponse(DealCreate):
         from_attributes = True
 ```
 
-**Ожидаемый результат:** Схемы готовы
+**Ожидаемый результат:** DTO готовы
 
 ---
 
-#### 2.3 Роутер для Deal
-**Файл:** `app/routers/deals.py`
-
-**Эндпоинты:**
+#### 2.3 Сервис для Deal
+**Файл:** `app/services/deal_service.py`
 
 ```python
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, or_
+from app.models.deal import Deal
+from app.dtos.deal import DealCreateDTO, DealUpdateDTO, DealStatus
+from typing import List, Optional, Tuple
+from datetime import datetime
+
+class DealService:
+    """Сервис для работы со сделками"""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def create(self, deal_data: DealCreateDTO, created_by: int) -> Deal:
+        """Создать новую сделку"""
+        deal = Deal(
+            **deal_data.model_dump(),
+            created_by=created_by
+        )
+        self.db.add(deal)
+        await self.db.commit()
+        await self.db.refresh(deal)
+        return deal
+    
+    async def get_by_id(self, deal_id: int) -> Optional[Deal]:
+        """Получить сделку по ID"""
+        result = await self.db.execute(
+            select(Deal).where(Deal.id == deal_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_all(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        status: DealStatus | None = None,
+        client_id: int | None = None,
+        assigned_to: int | None = None
+    ) -> Tuple[List[Deal], int]:
+        """Получить все сделки с фильтрацией"""
+        query = select(Deal)
+        count_query = select(func.count(Deal.id))
+        
+        # Фильтры
+        if status:
+            query = query.where(Deal.status == status)
+            count_query = count_query.where(Deal.status == status)
+        
+        if client_id:
+            query = query.where(Deal.client_id == client_id)
+            count_query = count_query.where(Deal.client_id == client_id)
+        
+        if assigned_to:
+            query = query.where(Deal.assigned_to == assigned_to)
+            count_query = count_query.where(Deal.assigned_to == assigned_to)
+        
+        # Получаем общее количество
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar()
+        
+        # Пагинация и сортировка
+        query = query.offset(skip).limit(limit).order_by(Deal.created_at.desc())
+        result = await self.db.execute(query)
+        deals = list(result.scalars().all())
+        
+        return deals, total
+    
+    async def update(
+        self,
+        deal_id: int,
+        deal_data: DealUpdateDTO,
+        user_id: int
+    ) -> Optional[Deal]:
+        """Обновить сделку"""
+        deal = await self.get_by_id(deal_id)
+        if not deal:
+            return None
+        
+        update_data = deal_data.model_dump(exclude_unset=True)
+        
+        # Автоматическая установка closed_at при закрытии сделки
+        if "status" in update_data:
+            new_status = update_data["status"]
+            if new_status in [DealStatus.WON, DealStatus.LOST] and deal.closed_at is None:
+                deal.closed_at = datetime.utcnow()
+        
+        for field, value in update_data.items():
+            setattr(deal, field, value)
+        
+        await self.db.commit()
+        await self.db.refresh(deal)
+        return deal
+    
+    async def delete(self, deal_id: int) -> bool:
+        """Удалить сделку"""
+        deal = await self.get_by_id(deal_id)
+        if not deal:
+            return False
+        
+        await self.db.delete(deal)
+        await self.db.commit()
+        return True
+    
+    async def get_stats(self) -> dict:
+        """Получить статистику по сделкам"""
+        # Общее количество
+        total_result = await self.db.execute(select(func.count(Deal.id)))
+        total = total_result.scalar()
+        
+        # По статусам
+        stats = {}
+        for status in DealStatus:
+            result = await self.db.execute(
+                select(func.count(Deal.id)).where(Deal.status == status.value)
+            )
+            stats[status.value] = result.scalar()
+        
+        # Сумма выигранных
+        won_result = await self.db.execute(
+            select(func.sum(Deal.amount)).where(Deal.status == DealStatus.WON.value)
+        )
+        won_amount = won_result.scalar() or 0
+        
+        return {
+            "total": total,
+            "by_status": stats,
+            "won_amount": float(won_amount)
+        }
+```
+
+**Наводящий вопрос:** Как автоматически устанавливать дату закрытия?
+**Подсказка:** При обновлении проверяй, если новый статус WON или LOST → установи current datetime в closed_at
+
+**Ожидаемый результат:** Сервис создан
+
+---
+
+#### 2.4 Роутер для Deal
+**Файл:** `app/routes/deals.py`
+
+```python
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.dtos.deal import DealCreateDTO, DealUpdateDTO, DealResponseDTO, DealStatus
+from app.services.deal_service import DealService
+from app.models.user import User
+from app.deps.auth import get_current_user
+from typing import List
+
 router = APIRouter(prefix="/api/deals", tags=["Deals"])
 
-# GET / — получить все сделки
-@router.get("/", response_model=list[DealResponse])
+@router.get("/", response_model=List[DealResponseDTO])
 async def get_deals(
-    status: DealStatus | None = None,
-    client_id: int | None = None,
-    assigned_to: int | None = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    status: DealStatus | None = Query(None),
+    client_id: int | None = Query(None),
+    assigned_to: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить список сделок с фильтрацией"""
-    # 1. Построить базовый запрос
-    # 2. Добавить фильтры по status, client_id, assigned_to
-    # 3. Вернуть результат
+    service = DealService(db)
+    deals, total = await service.get_all(
+        skip=skip,
+        limit=limit,
+        status=status,
+        client_id=client_id,
+        assigned_to=assigned_to
+    )
+    return deals
 
-# POST / — создать сделку
-@router.post("/", response_model=DealResponse, status_code=201)
+@router.post("/", response_model=DealResponseDTO, status_code=status.HTTP_201_CREATED)
 async def create_deal(
-    deal_data: DealCreate,
+    deal_data: DealCreateDTO,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Создать новую сделку"""
-    # 1. Проверить, что клиент существует
-    # 2. Проверить, что assigned_to пользователь существует
-    # 3. Создать сделку с created_by = current_user.id
+    service = DealService(db)
+    deal = await service.create(deal_data, created_by=current_user.id)
+    return deal
 
-# GET /{deal_id} — получить сделку
-@router.get("/{deal_id}", response_model=DealResponse)
+@router.get("/{deal_id}", response_model=DealResponseDTO)
 async def get_deal(
     deal_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Получить сделку по ID"""
+    service = DealService(db)
+    deal = await service.get_by_id(deal_id)
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    return deal
 
-# PUT /{deal_id} — обновить сделку
-@router.put("/{deal_id}", response_model=DealResponse)
+@router.put("/{deal_id}", response_model=DealResponseDTO)
 async def update_deal(
     deal_id: int,
-    deal_data: DealUpdate,
+    deal_data: DealUpdateDTO,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Обновить сделку"""
-    # 1. Найти сделку
-    # 2. Если статус изменился на won/lost → установить closed_at
+    service = DealService(db)
+    deal = await service.update(deal_id, deal_data, user_id=current_user.id)
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    return deal
 
-# DELETE /{deal_id} — удалить сделку
-@router.delete("/{deal_id}", status_code=204)
+@router.delete("/{deal_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_deal(
     deal_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Удалить сделку"""
+    service = DealService(db)
+    success = await service.delete(deal_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Deal not found")
 ```
-
-**Наводящий вопрос:** Как автоматически устанавливать дату закрытия?
-**Подсказка:** При обновлении проверяй, если новый статус WON или LOST → установи current datetime в closed_at
 
 **Ожидаемый результат:** CRUD операции работают
 
@@ -336,11 +444,8 @@ async def get_deal_stats(
     current_user: User = Depends(get_current_user)
 ):
     """Получить статистику по сделкам"""
-    # Вернуть:
-    # - общее количество сделок
-    # - количество по каждому статусу
-    # - общую сумму выигранных сделок
-    # - средний чек
+    service = DealService(db)
+    return await service.get_stats()
 ```
 
 **Ожидаемый результат:** Статистика работает
@@ -372,7 +477,8 @@ feature/deals-evelina
 ### Коммиты
 ```
 feat: add Deal model
-feat: add Deal schemas with status enum
+feat: add Deal DTOs with status enum
+feat: add Deal service with business logic
 feat: add CRUD endpoints for deals
 feat: add auto close date on status change
 ```
@@ -392,6 +498,7 @@ git push origin feature/deals-evelina
 - Консультации по архитектуре
 - Помощь с SQLAlchemy
 - Проверка кода перед коммитом
+- Проверка DDD структуры
 
 ### С Соней (Backend)
 - Согласование связей между Client и Deal
@@ -406,12 +513,14 @@ git push origin feature/deals-evelina
 ## Критерии приёмки
 
 - [ ] Модель Deal создана
-- [ ] Pydantic схемы работают валидацию
+- [ ] Pydantic DTO работают валидацию
+- [ ] Сервис содержит бизнес-логику
 - [ ] Все CRUD операции работают
 - [ ] Фильтрация по статусу работает
-- [ ] При закрытии сделки自动чески ставится closed_at
+- [ ] При закрытии сделки автоматически ставится closed_at
 - [ ] Все операции требуют авторизацию
 - [ ] Документация в коде (docstrings)
+- [ ] DDD структура соблюдена
 
 ---
 
@@ -421,6 +530,7 @@ git push origin feature/deals-evelina
 |------|------|--------|
 | Подготовка | Неделя 1-2 | |
 | Модель Deal | Неделя 7-8 | |
+| DTO и Сервис | Неделя 7-8 | |
 | CRUD операции | Неделя 7-8 | |
 | Статистика | Неделя 9-10 | |
 | Интеграция | Неделя 14-15 | |
