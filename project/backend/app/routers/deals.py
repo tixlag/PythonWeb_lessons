@@ -140,15 +140,82 @@ async def get_deal(
 @router.put('/{deal.id}', response_model=DealResponse)
 async def update_deal(
     deal_id: int,
-    
+    deal_data: DealUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    pass
-
-
+    logger.info(f'Обновление сделки {deal_id} пользователем {current_user.id}')
+    deal = await db.get(Deal, deal_id)
+    if not deal:
+        raise HTTPException(
+            status_code = status.HTTP_404_NOT_FOUND,
+            detail = 'Сделка не найдена'
+        )
+    
+    if deal_data.client_id is not None and deal_data.client_id != deal.client_id:
+        from app.models.client import Client
+        client = await db.get(Client, deal_data.client_id)
+        if not client:
+            raise HTTPException(
+                status_code = status.HTTP_404_NOT_FOUND,
+                detail = f'Клиент с ID {deal_data.client_id} не найден'
+            )
+    
+    if deal_data.assigned_to is not None and deal_data.assigned_to != deal.assigned_to:
+        if deal_data.assigned_to:
+            user = await db.get(User, deal_data.assigned_to),
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f'Пользователь с ID {deal_data.assigned_to} не найден'
+                )
+    
+    update_data = deal_data.model_dump(exclude_unset=True)
+    
+    if 'status' in update_data:
+        new_status = update_data['status'].value
+        
+        if new_status in ['won', 'lost'] and deal.closed_at is None:
+            deal.closed_at = datetime.now
+            logger.info(f'Сделка {deal_id} закрыта со статусом {new_status}')
+        
+        elif new_status not in ['won', 'lost'] and deal.closed_at:
+            deal.closed_at = None
+            logger.info(f'Сделка {deal_id} возвращена в работу')
+        
+        deal.status = new_status
+        del update_data['status']
+    
+    for field, value in update_data.items():
+        if hasattr(deal, field):
+            setattr(deal, field, value)
+    
+    deal.updated_at = datetime.now
+    
+    await db.commit()
+    await db.refresh(deal)
+    
+    logger.info(f'Сделка {deal_id} обновлена')
+    return deal
 
 
 @router.delete('/{deal.id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_deal(
-    
+    deal_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    pass
+    logger.info(f'Удаление сделки {deal_id} пользователем {current_user.id}')
+    
+    deal = await db.get(Deal, deal_id)
+    if not deal:
+        raise HTTPException(
+            status_code = status.HTTP_404_NOT_FOUND,
+            detail = 'Сделка не найдена'
+        )
+    
+    await db.delete(deal)
+    await db.commit()
+    
+    logger.info(f'Сделка {deal_id} удалена')
+    return None
