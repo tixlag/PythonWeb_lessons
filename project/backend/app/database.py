@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from app.config import settings
+from config import settings
 
 # Create async engine
 engine = create_async_engine(
@@ -18,6 +18,7 @@ async_session_maker = async_sessionmaker(
 
 # Base class for models
 Base = declarative_base()
+from models import User, Client, Deal, Interaction, Task
 
 
 async def get_db() -> AsyncSession:
