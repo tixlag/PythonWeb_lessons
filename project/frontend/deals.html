@@ -1,11 +1,67 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Сделки — CRM</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/kanban.css">
 </head>
 <body>
+    <div id="header"></div>
     
+    <main class="main-content">
+        <div class="page-header">
+            <h1>Сделки</h1>
+            <button id="addDealBtn" class="btn-primary">Добавить сделку</button>
+        </div>
+        
+        <div class="kanban-board">
+            <div class="kanban-column" data-status="new">
+                <div class="column-header">
+                    <h3>Новые</h3>
+                    <span class="deal-count">0</span>
+                </div>
+                <div class="column-content" data-status="new">
+                    <!-- Сделки -->
+                </div>
+            </div>
+            
+            <div class="kanban-column" data-status="negotiation">
+                <div class="column-header">
+                    <h3>Переговоры</h3>
+                    <span class="deal-count">0</span>
+                </div>
+                <div class="column-content" data-status="negotiation">
+                    <!-- Сделки -->
+                </div>
+            </div>
+            
+            <div class="kanban-column" data-status="won">
+                <div class="column-header">
+                    <h3>Выиграны</h3>
+                    <span class="deal-count">0</span>
+                </div>
+                <div class="column-content" data-status="won">
+                    <!-- Сделки -->
+                </div>
+            </div>
+            
+            <div class="kanban-column" data-status="lost">
+                <div class="column-header">
+                    <h3>Проиграны</h3>
+                    <span class="deal-count">0</span>
+                </div>
+                <div class="column-content" data-status="lost">
+                    <!-- Сделки -->
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <div id="modalContainer"></div>
+    
+    <script src="/js/api.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/deals.js"></script>
 </body>
 </html>
+```
