@@ -10,12 +10,6 @@ class UserCreateDTO(BaseModel):
     full_name: str | None = None
 
 
-class UserLoginDTO(BaseModel):
-    """DTO для входа в систему"""
-    username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=3)
-
-
 class UserResponseDTO(BaseModel):
     """DTO для ответа с данными пользователя"""
     id: int

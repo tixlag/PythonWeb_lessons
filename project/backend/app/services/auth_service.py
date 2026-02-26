@@ -1,7 +1,8 @@
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models.user import User
-from dtos.auth import UserCreateDTO, UserLoginDTO
+from dtos.auth import UserCreateDTO
 from utils.auth import hash_password, verify_password, create_access_token
 from datetime import timedelta
 from config import settings
@@ -41,7 +42,7 @@ class AuthService:
         await self.db.refresh(user)
         return user
 
-    async def login(self, credentials: UserLoginDTO) -> dict:
+    async def login(self, credentials: OAuth2PasswordRequestForm) -> dict:
         """Вход в систему"""
         result = await self.db.execute(
             select(User).where(User.username == credentials.username)

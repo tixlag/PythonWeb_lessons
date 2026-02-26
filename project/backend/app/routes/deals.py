@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
-from app.database import get_db
-from app.schemas.deal import DealCreate, DealUpdate, DealResponse, DealStats, DealStatus
-from app.models.deal import Deal
-from app.models.user import User
-from app.deps.auth import get_current_user
+from database import get_db
+from schemas.deal import DealCreate, DealUpdate, DealResponse, DealStats, DealStatus
+from models.deal import Deal
+from models.user import User
+from deps.auth import get_current_user
 from typing import List, Optional
 from datetime import datetime
 import logging

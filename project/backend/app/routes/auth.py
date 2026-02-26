@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
-from dtos.auth import UserCreateDTO, UserLoginDTO, UserResponseDTO, TokenDTO
+from dtos.auth import UserCreateDTO, UserResponseDTO, TokenDTO
 from services.auth_service import AuthService
 from deps.auth import get_current_user
 from models.user import User
@@ -21,15 +22,15 @@ async def register(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/login", response_model=TokenDTO)
+@router.post("/login", response_model=TokenDTO, )
 async def login(
-    credentials: UserLoginDTO,
+    form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db)
 ):
     """Вход в систему"""
     service = AuthService(db)
     try:
-        token_data = await service.login(credentials)
+        token_data = await service.login(form_data)
         return token_data
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
