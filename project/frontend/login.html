@@ -28,3 +28,28 @@
             </p>
         </form>
     </div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script>
+        // Если уже авторизован — редирект
+        if (auth.isAuthenticated()) {
+            window.location.href = '/deals.html';
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('error');
+
+            try {
+                await auth.login(username, password);
+                window.location.href = '/deals.html';
+            } catch (error) {
+                errorEl.textContent = error.message;
+            }
+        });
+    </script>
+</body>
+</html>

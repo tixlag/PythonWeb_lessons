@@ -6,7 +6,16 @@
     <link rel="stylesheet" href="/css/kanban.css">
 </head>
 <body>
-    <div id="header"></div>
+    <div id="header">
+        <div class="logo">
+            <a href="/">CRM</a>
+        </div>
+        <div class="user-info">
+            <a id="userName" href="/profile.html">
+            </a>
+        </div>
+        </div>
+    </div>
     
     <main class="main-content">
         <div class="page-header">
@@ -62,6 +71,12 @@
     <script src="/js/api.js"></script>
     <script src="/js/auth.js"></script>
     <script src="/js/deals.js"></script>
+<script>
+    if (auth.isAuthenticated()) {
+        const userName = document.getElementById('userName');
+        userName.innerHTML = auth.getUser().username;
+    }
+</script>
 </body>
 </html>
 ```

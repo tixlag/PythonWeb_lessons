@@ -5,7 +5,7 @@ class Settings:
     # Database
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "postgresql+asyncpg://crm_user:crm_secret_password@localhost:5432/crm_db"
+        "postgresql+asyncpg://crm_user:crm_secret_password@postgres:5432/crm_db"
     )
     
     # Security
