@@ -1,6 +1,10 @@
-from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime
+from datetime import datetime
+
+from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Enum
 from sqlalchemy.orm import relationship
 from database import Base
+
+from schemas.enums import DealStatus
 
 
 class Deal(Base):
@@ -8,10 +12,17 @@ class Deal(Base):
     __tablename__ = "deals"
 
     id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    amount = Column(Numeric, nullable=False)
+    status = Column(Enum(DealStatus, name="dealstatus"), nullable=False, default=DealStatus.NEW, index=True)
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, onupdate=datetime.now, default=datetime.now)
+    closed_at = Column(DateTime, nullable=True)
 
 
     # Связи
