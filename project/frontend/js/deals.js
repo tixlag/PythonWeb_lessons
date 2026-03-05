@@ -1,8 +1,8 @@
+const STATUSES = ['new', 'negotiation', 'won', 'lost'];
+
 if (!auth.isAuthenticated()) {
     window.location.href = '/login.html';
 }
-
-const STATUSES = ['new', 'negotiation', 'won', 'lost'];
 
 // Загрузка сделок
 async function loadDeals() {
@@ -20,10 +20,10 @@ function renderDeals(deals) {
     document.querySelectorAll('.column-content').forEach(col => {
         col.innerHTML = '';
     });
-    
+
     // Счётчики
     const counts = { new: 0, negotiation: 0, won: 0, lost: 0 };
-    
+
     deals.forEach(deal => {
         const card = createDealCard(deal);
         const column = document.querySelector(`.column-content[data-status="${deal.status}"]`);
@@ -32,7 +32,7 @@ function renderDeals(deals) {
             counts[deal.status]++;
         }
     });
-    
+
     // Обновить счётчики
     STATUSES.forEach(status => {
         const countEl = document.querySelector(`.kanban-column[data-status="${status}"] .deal-count`);
@@ -47,17 +47,17 @@ function createDealCard(deal) {
     card.draggable = true;
     card.dataset.id = deal.id;
     card.dataset.status = deal.status;
-    
+
     card.innerHTML = `
         <div class="deal-title">${escapeHtml(deal.title)}</div>
         <div class="deal-amount">${formatMoney(deal.amount)}</div>
         <div class="deal-client">${escapeHtml(deal.client?.name || '—')}</div>
     `;
-    
+
     // Drag events
     card.addEventListener('dragstart', handleDragStart);
     card.addEventListener('dragend', handleDragEnd);
-    
+
     return card;
 }
 
@@ -69,21 +69,6 @@ function handleDragStart(e) {
 function handleDragEnd(e) {
     e.target.classList.remove('dragging');
 }
-
-// Настройка drop зон
-document.querySelectorAll('.column-content').forEach(column => {
-    column.addEventListener('dragover', (e) => {
-        e.preventDefault();
-    });
-    
-    column.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        const dealId = e.dataTransfer.getData('text/plain');
-        const newStatus = column.dataset.status;
-        
-        await updateDealStatus(dealId, newStatus);
-    });
-});
 
 // Обновление статуса
 async function updateDealStatus(dealId, newStatus) {
@@ -109,17 +94,32 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// column.addEventListener('drop', async (e) => {
-//     e.preventDefault();
-//     const dealId = e.dataTransfer.getData('text/plain');
-//     if (!dealId) return; // нет данных – ничего не делаем
-//
-//     const newStatus = column.dataset.status;
-//     const currentCard = document.querySelector(`.deal-card[data-id="${dealId}"]`);
-//     const currentStatus = currentCard?.dataset.status;
-//
-//     // Если статус не изменился, не отправляем запрос
-//     if (currentStatus === newStatus) return;
-//
-//     await updateDealStatus(dealId, newStatus);
-// });
+// Настройка drop зон
+document.querySelectorAll('.column-content').forEach(column => {
+    column.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+
+    column.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        const dealId = e.dataTransfer.getData('text/plain');
+        const newStatus = column.dataset.status;
+
+        await updateDealStatus(dealId, newStatus);
+    });
+});
+
+column.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const dealId = e.dataTransfer.getData('text/plain');
+    if (!dealId) return; // нет данных – ничего не делаем
+
+    const newStatus = column.dataset.status;
+    const currentCard = document.querySelector(`.deal-card[data-id="${dealId}"]`);
+    const currentStatus = currentCard?.dataset.status;
+
+    // Если статус не изменился, не отправляем запрос
+    if (currentStatus === newStatus) return;
+
+    await updateDealStatus(dealId, newStatus);
+});
