@@ -19,6 +19,7 @@ class DealUpdate(BaseModel):
     
 class DealResponse(BaseModel):
     id: int
+    title: str
     created_by: int
     amount: float
     status: DealStatus
@@ -27,8 +28,8 @@ class DealResponse(BaseModel):
     updated_at: datetime
     closed_at: Optional[datetime]
     
-    class Config:
-        from_attributes = True
+class Config:
+    from_attributes = True
         
 class DealStats(BaseModel):
     total: int
