@@ -137,7 +137,7 @@ async def get_deal(
     return deal
 
 
-@router.put('/{deal.id}', response_model=DealResponse)
+@router.put('/{deal_id}', response_model=DealResponse)
 async def update_deal(
         deal_id: int,
         deal_data: DealUpdate,
@@ -160,16 +160,15 @@ async def update_deal(
                 detail=f'Клиент с ID {deal_data.client_id} не найден'
             )
 
-    if deal_data.assigned_to is not None and deal_data.assigned_to != deal.assigned_to:
-        if deal_data.assigned_to:
-            user = await db.get(User, deal_data.assigned_to),
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f'Пользователь с ID {deal_data.assigned_to} не найден'
-                )
+    if deal_data.assigned_to:
+        user = await db.get(User, deal_data.assigned_to)  # убрали запятую
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f'Пользователь с ID {deal_data.assigned_to} не найден'
+            )
 
-    update_data = deal_data.model_dump(exclude_unset=True)
+    update_data = deal_data.model_dump(exclude_unset=True, mode='python') # больше узнать о методе и про разные mode
 
     if 'status' in update_data:
         new_status = update_data['status'].value
@@ -189,7 +188,7 @@ async def update_deal(
         if hasattr(deal, field):
             setattr(deal, field, value)
 
-    deal.updated_at = datetime.now
+    deal.updated_at = datetime.now()  # добавили ()
 
     await db.commit()
     await db.refresh(deal)
@@ -198,7 +197,7 @@ async def update_deal(
     return deal
 
 
-@router.delete('/{deal.id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/{deal_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_deal(
         deal_id: int,
         db: AsyncSession = Depends(get_db),

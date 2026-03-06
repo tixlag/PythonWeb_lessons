@@ -94,6 +94,10 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+(async function () {
+    await loadDeals();
+})();
+
 // Настройка drop зон
 document.querySelectorAll('.column-content').forEach(column => {
     column.addEventListener('dragover', (e) => {
@@ -103,23 +107,17 @@ document.querySelectorAll('.column-content').forEach(column => {
     column.addEventListener('drop', async (e) => {
         e.preventDefault();
         const dealId = e.dataTransfer.getData('text/plain');
+        if (!dealId) return; // нет данных – ничего не делаем
+
         const newStatus = column.dataset.status;
+        const currentCard = document.querySelector(`.deal-card[data-id="${dealId}"]`);
+        const currentStatus = currentCard?.dataset.status;
+
+        // Если статус не изменился, не отправляем запрос
+        if (currentStatus === newStatus) return;
 
         await updateDealStatus(dealId, newStatus);
     });
 });
 
-column.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    const dealId = e.dataTransfer.getData('text/plain');
-    if (!dealId) return; // нет данных – ничего не делаем
 
-    const newStatus = column.dataset.status;
-    const currentCard = document.querySelector(`.deal-card[data-id="${dealId}"]`);
-    const currentStatus = currentCard?.dataset.status;
-
-    // Если статус не изменился, не отправляем запрос
-    if (currentStatus === newStatus) return;
-
-    await updateDealStatus(dealId, newStatus);
-});
