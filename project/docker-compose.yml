@@ -11,7 +11,7 @@ services:
   adminer:
     image: adminer:latest
     ports:
-      - "8082:8080"
+      - "8081:8080"
     environment:
       ADMINER_DEFAULT_SERVER: postgres
       ADMINER_DESIGN: dracula  # темы: pepa-linha, dracula, flat, etc
@@ -26,13 +26,11 @@ services:
       POSTGRES_USER: crm_user
       POSTGRES_PASSWORD: crm_secret_password
       POSTGRES_DB: crm_db
-      PYCHARM_HOST: host.docker.internal
     ports:
-      - "8000:8000"   # Порт приложения
-      - "5678:5678"   # Порт отладчика PyCharm
+      - "8000:8000"
     volumes:
       - ./backend:/app
-    command: 'bash -c "cd app && uvicorn main:app --host 0.0.0.0 --port 8000"'
+    command: 'bash -c "cd app && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"'
 
   nginx:
     image: nginx:alpine
