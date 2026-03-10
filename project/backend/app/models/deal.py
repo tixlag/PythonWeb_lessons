@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, E
 from sqlalchemy.orm import relationship
 from database import Base
 
-from schemas.enums import DealStatus
+from dtos.enums import DealStatus
 
 
 class Deal(Base):
