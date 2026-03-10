@@ -1,5 +1,8 @@
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+
+from database import get_db
 from models.deal import Deal
 from models.client import Client
 from models.user import User
@@ -12,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class DealService:
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession = Depends(get_db)):
         self.db = db
 
     async def create(self, deal_data: DealCreate, created_by: int) -> Deal:
