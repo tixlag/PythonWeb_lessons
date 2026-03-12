@@ -3,6 +3,7 @@ const STATUSES = ['new', 'negotiation', 'won', 'lost'];
 if (!auth.isAuthenticated()) {
     window.location.href = '/login.html';
 }
+const modal = document.getElementById('modalContainer');
 
 // Загрузка сделок
 async function loadDeals() {
@@ -119,5 +120,40 @@ document.querySelectorAll('.column-content').forEach(column => {
         await updateDealStatus(dealId, newStatus);
     });
 });
+
+function handleAddDeal(e) {
+    modal.innerHTML =
+        `
+        <div class="modal-wrapper">
+            <h2>Создать сделку</h2>
+            <form>
+                <input name="title" placeholder='Название сделки'>
+                <select name="client_id">
+                ` +
+                clients.map(client => `<option value="${client.id}">${client.name}</option>`)
+                + `
+                </select>
+                <input name="amount" placeholder='Сумма сделки'>
+                <input name="status" value="new">
+                <input type="submit" value="Создать">
+            </form>
+        </div>
+        `
+    modal.style.display = 'block';
+    modal.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target));
+        try {
+            await api.post('/api/deals/', data);
+            loadDeals();
+            modal.style.display = 'none';
+        } catch (error) {
+            alert('Ошибка создания сделки: ' + error.message);
+        }
+    })
+
+}
+
+document.getElementById('addDealBtn').addEventListener('click', handleAddDeal)
 
 

@@ -41,7 +41,7 @@ async def get_deals(
 async def create_deal(
         deal_data: DealCreate,
         current_user=Depends(get_current_user),
-    service = DealServiceDep,
+    service: DealServiceDep = None,
 ):
     logger.info(f'Создание новой сделки пользователем {current_user.id}')
 

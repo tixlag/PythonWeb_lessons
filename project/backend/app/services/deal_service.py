@@ -60,7 +60,6 @@ class DealService:
             client_id: Optional[int] = None,
             assigned_to: Optional[int] = None
     ) -> Tuple[List[Deal], int]:
-
         query = select(Deal)
         count_query = select(func.count(Deal.id))
 

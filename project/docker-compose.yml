@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: crm_secret_password
       POSTGRES_DB: crm_db
     ports:
-      - "5432:5432"
+      - "5455:5432"
 
   adminer:
     image: adminer:latest

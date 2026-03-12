@@ -10,6 +10,7 @@ class Client(Base):
     __tablename__ = "clients"
 
     id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
 
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
